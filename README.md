@@ -21,6 +21,5 @@ This is an application for managing users credentials with a client-server struc
 
 ## TO-DO
 
-- Ask doubts about https example
-- Ask about other doubts with the statement like:
-    - What is the identifierr in every entry?
+- For doing PBKDF, Argon2 id
+- How to incorporate public key login?
