@@ -1,5 +1,5 @@
 /*
-Cliente
+	Client
 */
 package client
 
@@ -18,34 +18,118 @@ import (
 	"password-management/utils"
 )
 
-// chk comprueba y sale si hay errores (ahorra escritura en programas sencillos)
+// chk checks and exits if there are errors (saves writing in simple programs)
 func chk(e error) {
 	if e != nil {
 		panic(e)
 	}
 }
 
-// Run gestiona el modo cliente
-func Run() {
-
-	/* creamos un cliente especial que no comprueba la validez de los certificados
-	esto es necesario por que usamos certificados autofirmados (para pruebas) */
+// User's registration on the password management system
+func Register() {
+	// We create a special client that does not check the validity of the certificates
+	// This is necessary because we use self-signed certificates (for development & testing)
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: tr}
 
-	// hash con SHA512 de la contraseña
+	//  Hash the password with SHA512 
 	keyClient := sha512.Sum512([]byte("contraseña del cliente"))
-	keyLogin := keyClient[:32]  // una mitad para el login (256 bits)
-	keyData := keyClient[32:64] // la otra para los datos (256 bits)
+	keyLogin := keyClient[:32]  // One half for the login (256bits)
+	keyData := keyClient[32:64] // The other half for the data (256bits)
 
-	// generamos un par de claves (privada, pública) para el servidor
+	// Generate a pair of keys (private, public) for the server
 	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
 	chk(err)
-	pkClient.Precompute() // aceleramos su uso con un precálculo
+	pkClient.Precompute() // Accelerate its use with a pre-calculation
 
-	pkJSON, err := json.Marshal(&pkClient) // codificamos con JSON
+	pkJSON, err := json.Marshal(&pkClient) // Encode with JSON
+	chk(err)
+
+	keyPub := pkClient.Public()           // Extract the public key separately
+	pubJSON, err := json.Marshal(&keyPub) // Encode with JSON
+	chk(err)
+
+	// Registration
+	data := url.Values{}                  // Structure to contain the values
+	data.Set("cmd", "register")           // Command (string)
+	data.Set("user", "usuario")           // User (string)
+	data.Set("pass", utils.Encode64(keyLogin)) // Password to base64
+
+	// Compression and encoding of the public key
+	data.Set("pubkey", utils.Encode64(utils.Compress(pubJSON)))
+
+	// Compression, encryption and encoding of the private key
+	data.Set("prikey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData)))
+
+	r, err := client.PostForm("https://localhost:10443", data) // Send a POST request
+	chk(err)
+	io.Copy(os.Stdout, r.Body) // Show the body of the response (it is a reader)
+	r.Body.Close()             // Close the reader of the body
+	fmt.Println()
+}
+
+// User's login on the password management system
+func Login() {
+	// We create a special client that does not check the validity of the certificates
+	// This is necessary because we use self-signed certificates (for development & testing)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+
+	// Hash the password with SHA512 
+	keyClient := sha512.Sum512([]byte("contraseña del cliente"))
+	keyLogin := keyClient[:32]  // One half for the login (256bits)
+	//keyData := keyClient[32:64] // The other half for the data (256bits)
+
+	// Generate a pair of keys (private, public) for the server
+	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
+	chk(err)
+	pkClient.Precompute() // Accelerate its use with a pre-calculation
+
+	//pkJSON, err := json.Marshal(&pkClient) // Encode with JSON
+	chk(err)
+
+	//keyPub := pkClient.Public()           // Extract the public key separately
+	//pubJSON, err := json.Marshal(&keyPub) // Encode with JSON
+	chk(err)
+
+	// ** ejemplo de login
+	data := url.Values{}
+	data.Set("cmd", "login")                                  // comando (string)
+	data.Set("user", "usuario")                               // usuario (string)
+	data.Set("pass", utils.Encode64(keyLogin))                 // contraseña (a base64 porque es []byte)
+	r, err := client.PostForm("https://localhost:10443", data) // enviamos por POST
+	chk(err)
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // decodificamos la respuesta para utilizar sus campos más adelante
+	fmt.Println(resp)                     // imprimimos por pantalla
+	r.Body.Close()                        // hay que cerrar el reader del body
+}
+
+// Run gestiona el modo cliente
+func Run() {
+
+	// We create a special client that does not check the validity of the certificates
+	// This is necessary because we use self-signed certificates (for development & testing)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+
+	// Hash the password with SHA512 
+	keyClient := sha512.Sum512([]byte("contraseña del cliente"))
+	keyLogin := keyClient[:32]  // one half for the login (256bits)
+	keyData := keyClient[32:64] // the other half for the data (256bits)
+
+	// We generate a pair of keys (private, public) for the server
+	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
+	chk(err)
+	pkClient.Precompute() // We accelerate its use with a pre-calculation
+
+	pkJSON, err := json.Marshal(&pkClient) // We encode with JSON
 	chk(err)
 
 	keyPub := pkClient.Public()           // extraemos la clave pública por separado

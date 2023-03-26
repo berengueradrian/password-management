@@ -10,17 +10,17 @@ Entre otras muchas, algunas limitaciones (por sencillez):
 - Se utiliza un token sencillo a modo de sesión/autentificación, se puede extender o hacer también con cookies (sobre HTTPS), con JWT, con firma digital, etc.
 - El cliente ni es interactivo ni muy útil, es una mera demostración.
 
-compilación:
+Compilation:
 go build
 
-arrancar el servidor:
+Start the server:
 sdshttp srv
 
-arrancar el cliente:
+Start the client:
 sdshttp cli
 
-pd. Comando openssl para generar el par certificado/clave para localhost:
-(ver https://letsencrypt.org/docs/certificates-for-localhost/)
+OpenSSL command to generate the certificate/key pair for localhost:
+(see https://letsencrypt.org/docs/certificates-for-localhost/)
 
 	openssl req -x509 -out localhost.crt -keyout localhost.key \
 	  -newkey rsa:2048 -nodes -sha256 \
@@ -34,9 +34,18 @@ import (
 	"os"
 	"password-management/client"
 	"password-management/server"
+	"bufio"
 )
 
 func main() {
+
+	// The first thing we need to do is create the structure of the program in terminal
+	os.Stdout.WriteString("--- Welcome to the password management system ---\n\n")
+	os.Stdout.WriteString("1. Login\n")
+	os.Stdout.WriteString("2. Register\n\n")
+	os.Stdout.WriteString("- Introduce an option\n")
+	os.Stdout.WriteString("> ")
+	keyscan := bufio.NewScanner(os.Stdin)
 
 	fmt.Println("sdshttp :: un ejemplo de login mediante TLS/HTTP en Go.")
 	s := "Introduce srv para funcionalidad de servidor y cli para funcionalidad de cliente"
