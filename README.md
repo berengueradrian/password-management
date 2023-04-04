@@ -16,7 +16,7 @@ This is an application for managing users credentials with a client-server struc
 - Random password generator and by profiles (length, characters groups, easy to remember/pronounce).
 - Capability to generate public and private key credentials.
 - Digital signature incorporation to guarantee the origin of the data.
-- ***Incorporate additional data on every request (such as files).
+- Incorporate additional data on every request (such as files, txt, etc).
 
 ### These 4 for the moment and we can add some more
 
@@ -28,10 +28,15 @@ This is an application for managing users credentials with a client-server struc
 - Connection with the database
 - Start to work
 
-- For doing PBKDF, Argon2 id
+- For doing PBKDF, Argon2(id)
+
 - Doubts:
-    - How to do a pk login? Is it different to the 0 knowledge, because in the 0 knowledge we send the klogin and with pkey it may be unnecessary
-    - Capability to generate public and private key credentials is done with RSA as it is allready done in the example or should we add something else? And the certificates as an entry? explore libraries
-    - The random password generator is an algorithm made by us or something like a library where we obtain some algos and then we perfection them? 
-    - Does the user||passwd concatenation add an extra layer of security to the klogin derivation for saving the authentication info or not?
-    - How is it done a second authentication factor on the practice? ex. email, sms...
+    - **New**:
+        - How to do a credentials saving with files or txt, etc?
+        - What do we refer when we say random passwords by profiles
+    - Solved:
+        - How to do a pk login? Is it different to the 0 knowledge, because in the 0 knowledge we send the klogin and with pkey it may be unnecessary
+        - Capability to generate public and private key credentials is done with RSA as it is allready done in the example or should we add something else? And the certificates as an entry? explore libraries
+        - The random password generator is an algorithm made by us or something like a library where we obtain some algos and then we perfection them? we can do both, the better way
+        - Does the user||passwd concatenation add an extra layer of security to the klogin derivation for saving the authentication info or not?
+        - How is it done a second authentication factor on the practice? ex. email, sms...

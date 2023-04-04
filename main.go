@@ -33,35 +33,39 @@ import (
 	"fmt"
 	"os"
 	"password-management/client"
-	"password-management/server"
+	//"password-management/server"
 	"bufio"
 )
 
 func main() {
 
-	// The first thing we need to do is create the structure of the program in terminal
-	os.Stdout.WriteString("--- Welcome to the password management system ---\n\n")
-	os.Stdout.WriteString("1. Login\n")
-	os.Stdout.WriteString("2. Register\n\n")
-	os.Stdout.WriteString("- Introduce an option\n")
-	os.Stdout.WriteString("> ")
-	keyscan := bufio.NewScanner(os.Stdin)
+	for {
+		// Initial prompt for logging or register in the system
+		os.Stdout.WriteString("--- Welcome to the password management system ---\n" +
+		"- Login or register to store your credentials safely\n\n" +
+		"1. Log in\n" +
+		"2. Register\n" +
+		"q. Quit\n\n" +
+		"- Introduce an option\n" +
+		"> ")
+		// Read the user input
+		command := bufio.NewScanner(os.Stdin)
 
-	fmt.Println("sdshttp :: un ejemplo de login mediante TLS/HTTP en Go.")
-	s := "Introduce srv para funcionalidad de servidor y cli para funcionalidad de cliente"
-
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "srv":
-			fmt.Println("Entrando en modo servidor...")
-			server.Run()
-		case "cli":
-			fmt.Println("Entrando en modo cliente...")
-			client.Run()
-		default:
-			fmt.Println("Parámetro '", os.Args[1], "' desconocido. ", s)
+		// If the user types an option, it is processed
+		if command.Scan() {
+			switch command.Text() {
+			case "1":
+				fmt.Println()
+				client.Login()
+			case "2":
+				fmt.Println()
+				client.Register()
+			case "q":
+				fmt.Println("- Exit...")
+				os.Exit(0)
+			default:
+				fmt.Println("Uknown command '", command.Text(), "'.")
+			}
 		}
-	} else {
-		fmt.Println(s)
 	}
 }

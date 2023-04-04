@@ -1,5 +1,5 @@
 /*
-Servidor
+	Server
 */
 package server
 
@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// chk comprueba y sale si hay errores (ahorra escritura en programas sencillos)
+// chk checks and exits if there are errors (saves writing in simple programs)
 func chk(e error) {
 	if e != nil {
 		panic(e)
@@ -123,19 +123,19 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 }
 
-// respuesta del servidor
-// (empieza con mayúscula ya que se utiliza en el cliente también)
-// (los variables empiezan con mayúscula para que sean consideradas en el encoding)
+// Server's response
+// (begins with uppercase since it is used in the client too)
+// (the variables begin with uppercase to be considered in the encoding)
 type Resp struct {
-	Ok    bool   // true -> correcto, false -> error
-	Msg   string // mensaje adicional
-	Token []byte // token de sesión para utilizar por el cliente
+	Ok    bool   // true -> correct, false -> error
+	Msg   string // additional message
+	Token []byte // session token to be used by the client
 }
 
-// función para escribir una respuesta del servidor
+// function to write the server's response
 func response(w io.Writer, ok bool, msg string, token []byte) {
-	r := Resp{Ok: ok, Msg: msg, Token: token} // formateamos respuesta
-	rJSON, err := json.Marshal(&r)            // codificamos en JSON
-	chk(err)                                  // comprobamos error
-	w.Write(rJSON)                            // escribimos el JSON resultante
+	r := Resp{Ok: ok, Msg: msg, Token: token} // format the response
+	rJSON, err := json.Marshal(&r)            // encode in JSON
+	chk(err)                                  // check for errors
+	w.Write(rJSON)                            // write the resulting JSON
 }
