@@ -15,7 +15,6 @@ This is an application for managing users credentials with a client-server struc
 - Privacity optimization with '0 knowledge'. The server recieves the data encoded by the client.
 - Random password generator and by profiles (length, characters groups, easy to remember/pronounce).
 - Capability to generate public and private key credentials.
-- User authentication with public key incorporation.
 - Digital signature incorporation to guarantee the origin of the data.
 - ***Incorporate additional data on every request (such as files).
 
@@ -32,5 +31,7 @@ This is an application for managing users credentials with a client-server struc
 - For doing PBKDF, Argon2 id
 - Doubts:
     - How to do a pk login? Is it different to the 0 knowledge, because in the 0 knowledge we send the klogin and with pkey it may be unnecessary
-    - Capability to generate public and private key credentials is done with RSA as it is allready done in the example or should we add something else? And the certificates as an entry?
-    - The random password generator is an algorithm made by us or something like a library where we obtain some algos and then we perfection them?
+    - Capability to generate public and private key credentials is done with RSA as it is allready done in the example or should we add something else? And the certificates as an entry? explore libraries
+    - The random password generator is an algorithm made by us or something like a library where we obtain some algos and then we perfection them? 
+    - Does the user||passwd concatenation add an extra layer of security to the klogin derivation for saving the authentication info or not?
+    - How is it done a second authentication factor on the practice? ex. email, sms...
