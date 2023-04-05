@@ -76,6 +76,8 @@ func Login() {
 	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on 
 	fmt.Println(resp)                     // Print on the screen
 	r.Body.Close()                        // Colse the body's reader
+
+	// TO-DO check login correct
 }
 
 // User's registration in the password management system

@@ -11,6 +11,7 @@ This is an application for managing users credentials with a client-server struc
 - Secure red transport between client and server made with HTTPS protocol.
 
 ## Extra functionalities
+### These 4 for the moment and we can add some more
 
 - Privacity optimization with '0 knowledge'. The server recieves the data encoded by the client.
 - Random password generator and by profiles (length, characters groups, easy to remember/pronounce).
@@ -18,22 +19,13 @@ This is an application for managing users credentials with a client-server struc
 - Digital signature incorporation to guarantee the origin of the data.
 - Incorporate additional data on every request (such as files, txt, etc).
 
-### These 4 for the moment and we can add some more
-
-## TO-DO
-
-- Establish the optional requirements we will do as minimum at first
-- Establish the general structure of the app (what data will we store for the user, how it is supposed to be implemented things like the login with pk, random password generators, cypher the data on the database but since the client, etc)
-- Create the relational esquema
-- Connection with the database
-- Start to work
-
 - For doing PBKDF, Argon2(id)
 
 - Doubts:
     - **New**:
         - How to do a credentials saving with files or txt, etc?
-        - What do we refer when we say random passwords by profiles
+        - What do we refer when we say random passwords by profiles?
+        - Is it needed to use session token with last seen date and public key signature? (is it good to sign the token for double security?)
     - Solved:
         - How to do a pk login? Is it different to the 0 knowledge, because in the 0 knowledge we send the klogin and with pkey it may be unnecessary
         - Capability to generate public and private key credentials is done with RSA as it is allready done in the example or should we add something else? And the certificates as an entry? explore libraries
