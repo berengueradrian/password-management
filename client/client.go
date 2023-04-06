@@ -83,7 +83,7 @@ func Login() {
 // User's registration in the password management system
 func Register() {
 	userScan, createOwn := "", ""
-	var passScan *bufio.Scanner
+	passScan, passScan2 := "", ""
 
 	// Initial prompt for register form
 	os.Stdout.WriteString("-- Register --\n")
@@ -93,25 +93,26 @@ func Register() {
 	os.Stdout.WriteString("\n")
 	os.Stdout.WriteString("- Do you want to create your own password?(if not, a random one will be generated) (y/n)\n")
 	os.Stdout.WriteString("> ")
+	fmt.Scan(&createOwn)
 
 	// If the user types y or Y, he will be asked to create his own password
 	if createOwn == "y" || createOwn == "Y" {
 		// Loop until the user types two equal passwords
 		for {
 			os.Stdout.WriteString("- Password for " + userScan + ": ")
-			passScan = bufio.NewScanner(os.Stdin)
+			fmt.Scan(&passScan)
 			os.Stdout.WriteString("- Repeat the password: ")
-			passScan2 := bufio.NewScanner(os.Stdin)
+			fmt.Scan(&passScan2)
 			// Check if the passwords match
-			if passScan.Text() != passScan2.Text() {
-				os.Stdout.WriteString("* Passwords do not match, try again\n")
+			if passScan != passScan2 {
+				os.Stdout.WriteString("*Error: Passwords do not match, try again\n")
 			} else {
 				break
 			}
 		}
 	} else { // If the user types n or another character, a random password will be generated
 		randomPasswordGenerator(passScan)
-		os.Stdout.WriteString("- Your randomly generated password is: '" + passScan.Text() + "' (copy and save it in a safe place)\n")
+		os.Stdout.WriteString("- Your randomly generated password is: '" + passScan + "' (copy and save it in a safe place)\n")
 	}
 
 	// We create a special client that does not check the validity of the certificates
@@ -122,27 +123,27 @@ func Register() {
 	client := &http.Client{Transport: tr}
 
 	//  Hash the password with SHA512 
-	keyClient := sha512.Sum512([]byte(passScan.Text()))
-	keyLogin := keyClient[:32]  // One half for the login (256bits)
-	keyData := keyClient[32:64] // The other half for the data (256bits)
+	keyClient := sha512.Sum512([]byte(passScan))
+	keyLogin := keyClient[:32]  // one half for the login (256bits)
+	keyData := keyClient[32:64] // the other half for the data (256bits)
 
 	// Generate a pair of keys (private, public) for the server
 	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
 	chk(err)
-	pkClient.Precompute() // Accelerate its use with a pre-calculation
+	pkClient.Precompute() // accelerate its use with a pre-calculation
 
-	pkJSON, err := json.Marshal(&pkClient) // Encode with JSON
+	pkJSON, err := json.Marshal(&pkClient) // encode with JSON
 	chk(err)
 
-	keyPub := pkClient.Public()           // Extract the public key separately
-	pubJSON, err := json.Marshal(&keyPub) // Encode with JSON
+	keyPub := pkClient.Public()           // extract the public key separately
+	pubJSON, err := json.Marshal(&keyPub) // encode with JSON
 	chk(err)
 
 	// **Registration example
-	data := url.Values{}                  // Structure to contain the values
-	data.Set("cmd", "register")           // Command (string)
-	data.Set("user", userScan)           // User (string)
-	data.Set("pass", utils.Encode64(keyLogin)) // Password to base64
+	data := url.Values{}                  // structure to contain the values
+	data.Set("cmd", "register")           // command (string)
+	data.Set("username", userScan)           // username (string)
+	data.Set("pass", utils.Encode64(keyLogin)) // password to base64
 
 	// Compression and encoding of the public key
 	data.Set("pubkey", utils.Encode64(utils.Compress(pubJSON)))
@@ -150,15 +151,15 @@ func Register() {
 	// Compression, encryption and encoding of the private key
 	data.Set("prikey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData)))
 
-	r, err := client.PostForm("https://localhost:10443", data) // Send a POST request
+	r, err := client.PostForm("https://localhost:10443", data) // send a POST request
 	chk(err)
-	io.Copy(os.Stdout, r.Body) // Show the body of the response (it is a reader)
-	r.Body.Close()             // Close the reader of the body
+	io.Copy(os.Stdout, r.Body) // show the body of the response (it is a reader)
+	r.Body.Close()             // close the reader of the body
 	fmt.Println()
 }
 
 // randomPasswordGenerator generates a random password based on entered parameters by the user
-func randomPasswordGenerator(passScan *bufio.Scanner) {
+func randomPasswordGenerator(passScan string) {
 
 	// TO-DO Check the algorithm and see if we want to do it like this or not
 	// we could do it like this just for the register and for adding
@@ -215,9 +216,9 @@ func Run() {
 	// We generate a pair of keys (private, public) for the server
 	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
 	chk(err)
-	pkClient.Precompute() // We accelerate its use with a pre-calculation
+	pkClient.Precompute() // accelerate its use with a pre-calculation
 
-	pkJSON, err := json.Marshal(&pkClient) // We encode with JSON
+	pkJSON, err := json.Marshal(&pkClient) // encode with JSON
 	chk(err)
 
 	keyPub := pkClient.Public()           // extraemos la clave pública por separado

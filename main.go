@@ -33,38 +33,46 @@ import (
 	"fmt"
 	"os"
 	"password-management/client"
-	//"password-management/server"
+	"password-management/server"
 	"bufio"
 )
 
 func main() {
-
-	for {
-		// Initial prompt for logging or register in the system
-		os.Stdout.WriteString("--- Welcome to the password management system ---\n" +
-		"- Login or register to store your credentials safely\n\n" +
-		"1. Log in\n" +
-		"2. Register\n" +
-		"q. Quit\n\n" +
-		"- Introduce an option\n" +
-		"> ")
-		// Read the user input
-		command := bufio.NewScanner(os.Stdin)
-
-		// If the user types an option, it is processed
-		if command.Scan() {
-			switch command.Text() {
-			case "1":
-				fmt.Println()
-				client.Login()
-			case "2":
-				fmt.Println()
-				client.Register()
-			case "q":
-				fmt.Println("- Exit...")
-				os.Exit(0)
-			default:
-				fmt.Println("Uknown command '", command.Text(), "'.")
+	// For running the server
+	if( len(os.Args) > 1 ) {
+		switch os.Args[1] {
+		case "-server", "-s", "-srv":
+			fmt.Println("Running the server...")
+			server.Run()
+		}
+	} else { // no arguments, execute the client
+		for {
+			// Initial prompt for logging or register in the system
+			os.Stdout.WriteString("--- Welcome to the password management system ---\n" +
+			"- Login or register to store your credentials safely\n\n" +
+			"1. Log in\n" +
+			"2. Register\n" +
+			"q. Quit\n\n" +
+			"- Introduce an option\n" +
+			"> ")
+			// Read the user input
+			command := bufio.NewScanner(os.Stdin)
+	
+			// If the user types an option, it is processed
+			if command.Scan() {
+				switch command.Text() {
+				case "1": // logging in the system
+					fmt.Println()
+					client.Login()
+				case "2": // register in the system
+					fmt.Println()
+					client.Register()
+				case "q": // exit
+					fmt.Println("- Exit...\n")
+					os.Exit(0)
+				default:
+					fmt.Println("Uknown command '", command.Text(), "'.")
+				}
 			}
 		}
 	}
