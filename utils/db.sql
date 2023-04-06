@@ -2,20 +2,20 @@ create database passmanager;
 
 create table users
 (
-    token         binary not null,
-    username      binary not null,
-    password      binary not null,
-    salt          binary not null,
-    session_token binary null,
-    last_seen     binary null,
+    token         varbinary(256) not null,
+    username      varbinary(256) not null,
+    password      varbinary(256) not null,
+    salt          varbinary(256) not null,
+    session_token varbinary(256) null,
+    last_seen     varbinary(256) null,
     constraint token
         primary key (token)
 );
 
 create table public_keys
 (
-    token      binary not null,
-    public_key binary not null,
+    token      varbinary(256) not null,
+    public_key varbinary(256) not null,
     constraint token
         primary key (token),
     constraint token_fk
@@ -25,11 +25,11 @@ create table public_keys
 create table credentials
 (
     id       int    not null,
-    user_id  binary not null,
-    alias    binary not null,
-    user     binary null,
-    password binary not null,
-    site     binary null,
+    user_id  varbinary(256) not null,
+    alias    varbinary(256) not null,
+    user     varbinary(256) null,
+    password varbinary(256) not null,
+    site     varbinary(256) null,
     constraint id
         primary key (id),
     constraint user_id
@@ -40,7 +40,7 @@ create table files
 (
     id            int    not null,
     credential_id int    not null,
-    path          binary not null,
+    path          varbinary(256) not null,
     constraint id
         primary key (id),
     constraint credential_id

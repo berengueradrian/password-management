@@ -35,45 +35,54 @@ type user struct {
 // (se podría serializar con JSON o Gob, etc. y escribir/leer de disco para persistencia)
 var gUsers map[string]user
 
-// gestiona el modo servidor
+// Manage the server
 func Run() {
 	gUsers = make(map[string]user) // inicializamos mapa de usuarios
 
-	http.HandleFunc("/", handler) // asignamos un handler global
+	http.HandleFunc("/", handler) // assign a global handler
 
-	// escuchamos el puerto 10443 con https y comprobamos el error
+	// Listen on port 10443 and check for errors
 	chk(http.ListenAndServeTLS(":10443", "localhost.crt", "localhost.key", nil))
 }
 
+// Function to handle the requests
 func handler(w http.ResponseWriter, req *http.Request) {
-	req.ParseForm()                              // es necesario parsear el formulario
-	w.Header().Set("Content-Type", "text/plain") // cabecera estándar
+	req.ParseForm()                              // need to parse the form
+	w.Header().Set("Content-Type", "text/plain") // standard header
 
-	switch req.Form.Get("cmd") { // comprobamos comando desde el cliente
-	case "register": // ** registro
-		_, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
+	switch req.Form.Get("cmd") { // chech the command
+	case "register": // ** registration
+		_, ok := gUsers[req.Form.Get("user")] // does the user exist?
 		if ok {
 			response(w, false, "Usuario ya registrado", nil)
 			return
 		}
 
 		u := user{}
-		u.Name = req.Form.Get("user")                   // nombre
-		u.Salt = make([]byte, 16)                       // sal (16 bytes == 128 bits)
-		rand.Read(u.Salt)                               // la sal es aleatoria
-		u.Data = make(map[string]string)                // reservamos mapa de datos de usuario
-		u.Data["private"] = req.Form.Get("prikey")      // clave privada
-		u.Data["public"] = req.Form.Get("pubkey")       // clave pública
-		password := utils.Decode64(req.Form.Get("pass")) // contraseña (keyLogin)
+		u.Name = req.Form.Get("username")                   // username
+		u.Salt = make([]byte, 16)                       // salt (16 bytes == 128 bits)
+		rand.Read(u.Salt)                               // the salt is random
+		u.Data = make(map[string]string)                // reserve space for additional data
+		u.Data["private"] = req.Form.Get("prikey")      // private key
+		u.Data["public"] = req.Form.Get("pubkey")       // public key
+		password := utils.Decode64(req.Form.Get("pass")) // password (keyLogin)
 
-		// "hasheamos" la contraseña con scrypt (argon2 es mejor)
+		// "hash" the password with scrypt (argon2 is better)
 		u.Hash, _ = scrypt.Key(password, u.Salt, 16384, 8, 1, 32)
 
-		u.Seen = time.Now()        // asignamos tiempo de login
+		u.Seen = time.Now()        // assign a timestamp or login time
 		u.Token = make([]byte, 16) // token (16 bytes == 128 bits)
-		rand.Read(u.Token)         // el token es aleatorio
+		rand.Read(u.Token)         // the token is random
 
 		gUsers[u.Name] = u
+		db := utils.ConnectDB()
+		defer db.Close()
+
+		// Insert data into the database
+		insert, err := db.Query("INSERT INTO users (token, username, password, salt, session_token, last_seen) VALUES (?, ?, ?, ?, ?, ?)", u.Token, u.Name, u.Hash, u.Salt, u.Token, u.Seen)
+		chk(err) // check for errors
+		defer insert.Close()
+
 		response(w, true, "Usuario registrado", u.Token)
 
 	case "login": // ** login
@@ -132,7 +141,7 @@ type Resp struct {
 	Token []byte // session token to be used by the client
 }
 
-// function to write the server's response
+// Function to write the server's response
 func response(w io.Writer, ok bool, msg string, token []byte) {
 	r := Resp{Ok: ok, Msg: msg, Token: token} // format the response
 	rJSON, err := json.Marshal(&r)            // encode in JSON
