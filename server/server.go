@@ -10,7 +10,7 @@ import (
 	"io"
 	"net/http"
 	"password-management/utils"
-	"time"
+	//"time"
 	"golang.org/x/crypto/scrypt"
 )
 
@@ -23,11 +23,12 @@ func chk(e error) {
 
 // ejemplo de tipo para un usuario
 type user struct {
-	Name  string            // nombre de usuario
-	Hash  []byte            // hash de la contraseña
+	Token []byte            // token de identificación
+	Name  []byte            // nombre de usuario
+	Password  []byte            // hash de la contraseña
 	Salt  []byte            // sal para la contraseña
-	Token []byte            // token de sesión
-	Seen  time.Time         // última vez que fue visto
+	SessionToken []byte            // token de sesión
+	Seen  []byte         // última vez que fue visto
 	Data  map[string]string // datos adicionales del usuario
 }
 
@@ -58,31 +59,28 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
+		// USer data
 		u := user{}
-		u.Name = req.Form.Get("username")                   // username
-		u.Salt = make([]byte, 16)                       // salt (16 bytes == 128 bits)
-		rand.Read(u.Salt)                               // the salt is random
+		u.Token = []byte(req.Form.Get("token"))         // token id
+		u.Name = []byte(req.Form.Get("username"))       // username
+		u.Password = []byte(req.Form.Get("password"))   // password
+		u.Salt = []byte(req.Form.Get("salt"))           // salt
+		u.SessionToken = []byte(req.Form.Get("session_token")) // session token
+		u.Seen = []byte(req.Form.Get("last_seen"))        // last time the user was seen
+
 		u.Data = make(map[string]string)                // reserve space for additional data
 		u.Data["private"] = req.Form.Get("prikey")      // private key
 		u.Data["public"] = req.Form.Get("pubkey")       // public key
-		password := utils.Decode64(req.Form.Get("pass")) // password (keyLogin)
 
-		// "hash" the password with scrypt (argon2 is better)
-		u.Hash, _ = scrypt.Key(password, u.Salt, 16384, 8, 1, 32)
-
-		u.Seen = time.Now()        // assign a timestamp or login time
-		u.Token = make([]byte, 16) // token (16 bytes == 128 bits)
-		rand.Read(u.Token)         // the token is random
-
-		gUsers[u.Name] = u
+		// Open db connection
 		db := utils.ConnectDB()
-		defer db.Close()
+		defer db.Close() // close the database connection
 
 		// Insert data into the database
-		insert, err := db.Query("INSERT INTO users (token, username, password, salt, session_token, last_seen) VALUES (?, ?, ?, ?, ?, ?)", u.Token, u.Name, u.Hash, u.Salt, u.Token, u.Seen)
+		insert, err := db.Query("INSERT INTO users (token, username, password, salt, session_token, last_seen) VALUES (?, ?, ?, ?, ?, ?)", u.Token, u.Name, u.Password, u.Salt, u.SessionToken, u.Seen)
 		chk(err) // check for errors
-		defer insert.Close()
-
+		defer insert.Close() // close the insert statement
+		
 		response(w, true, "Usuario registrado", u.Token)
 
 	case "login": // ** login
@@ -94,14 +92,14 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		password := utils.Decode64(req.Form.Get("pass"))          // obtenemos la contraseña (keyLogin)
 		hash, _ := scrypt.Key(password, u.Salt, 16384, 8, 1, 32) // scrypt de keyLogin (argon2 es mejor)
-		if !bytes.Equal(u.Hash, hash) {                          // comparamos
+		if !bytes.Equal(u.Password, hash) {                          // comparamos
 			response(w, false, "Credenciales inválidas", nil)
 
 		} else {
-			u.Seen = time.Now()        // asignamos tiempo de login
+			//u.Seen = time.Now()        // asignamos tiempo de login
 			u.Token = make([]byte, 16) // token (16 bytes == 128 bits)
 			rand.Read(u.Token)         // el token es aleatorio
-			gUsers[u.Name] = u
+			//gUsers[u.Name] = u
 			response(w, true, "Credenciales válidas", u.Token)
 		}
 
@@ -110,7 +108,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		if !ok {
 			response(w, false, "No autentificado", nil)
 			return
-		} else if (u.Token == nil) || (time.Since(u.Seen).Minutes() > 60) {
+		} else if (u.Token == nil) /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
 			// sin token o con token expirado
 			response(w, false, "No autentificado", nil)
 			return
@@ -122,8 +120,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		datos, err := json.Marshal(&u.Data) //
 		chk(err)
-		u.Seen = time.Now()
-		gUsers[u.Name] = u
+		//u.Seen = time.Now()
+		//gUsers[u.Name] = u
 		response(w, true, string(datos), u.Token)
 
 	default:
