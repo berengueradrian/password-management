@@ -1,13 +1,15 @@
 /*
-	Client
+Client
 */
 package client
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,10 +18,9 @@ import (
 	"os"
 	"password-management/server"
 	"password-management/utils"
-	"bufio"
 	"strconv"
 	"time"
-    "encoding/hex"
+
 	"golang.org/x/crypto/argon2"
 	//"github.com/sethvargo/go-password/password"
 )
@@ -51,10 +52,10 @@ func Login() {
 	}
 	client := &http.Client{Transport: tr}
 
-	// Hash the password with SHA512 
+	// Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte(passScan))
 	keyLogin := keyClient[:32]  // One half for the login (256bits)
-	//keyData := keyClient[32:64] // The other half for the data (256bits)
+	keyData := keyClient[32:64] // The other half for the data (256bits)
 
 	// Generate a pair of keys (private, public) for the server
 	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
@@ -70,13 +71,13 @@ func Login() {
 
 	// ** login example
 	data := url.Values{}
-	data.Set("cmd", "login")                                  // command (string)
-	data.Set("user", userScan)                               // username (string)
-	data.Set("pass", utils.Encode64(keyLogin))                 // password (encoded in base64 because it is []byte)
-	r, err := client.PostForm("https://localhost:10443", data) // POST request
+	data.Set("cmd", "login")                                                                   // command (string)
+	data.Set("user", utils.Encode64(utils.Encrypt(utils.Compress([]byte(userScan)), keyData))) // username (string)
+	data.Set("pass", utils.Encode64(utils.Encrypt(utils.Compress(keyLogin), keyData)))         // password (encoded in base64 because it is []byte)
+	r, err := client.PostForm("https://localhost:10443", data)                                 // POST request
 	chk(err)
 	resp := server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on 
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
 	fmt.Println(resp)                     // Print on the screen
 	r.Body.Close()                        // Colse the body's reader
 
@@ -125,7 +126,7 @@ func Register() {
 	}
 	client := &http.Client{Transport: tr}
 
-	//  Hash the password with SHA512 
+	//  Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte(passScan))
 	keyLogin := keyClient[:32]  // one half for the login (256bits)
 	keyData := keyClient[32:64] // the other half for the data (256bits)
@@ -136,42 +137,42 @@ func Register() {
 	pkClient.Precompute() // accelerate its use with a pre-calculation
 
 	pkJSON, err := json.Marshal(&pkClient) // encode with JSON
-	chk(err) // check for errors
+	chk(err)                               // check for errors
 
 	keyPub := pkClient.Public()           // extract the public key separately
 	pubJSON, err := json.Marshal(&keyPub) // encode with JSON
 	chk(err)
 
 	// **Registration example
-	data := url.Values{}                  // structure to contain the values
-	data.Set("cmd", "register")           // command (string)
-	data.Set("token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(generateToken(userScan, string(keyLogin)))), keyData))) // user's token id
-	data.Set("username", utils.Encode64(utils.Encrypt(utils.Compress([]byte(userScan)), keyData)))           // username
-	salt := make([]byte, 16)              // generate a random salt
-	rand.Read(salt)                       // check if it is random
-	password := argon2Key(keyLogin, salt) // hash the password with argon2
-	data.Set("password", utils.Encode64(utils.Encrypt(utils.Compress(password), keyData))) // password
-	data.Set("salt", utils.Encode64(salt))     // salt to base64  //TO-DO: need to encode every item?
-	sessionToken := make([]byte, 16) // generate a random token
-	rand.Read(sessionToken) // check if it is random
-	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(sessionToken)), keyData))) // user's session token
+	data := url.Values{}                                                                                                            // structure to contain the values
+	data.Set("cmd", "register")                                                                                                     // command (string)
+	data.Set("token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(generateToken(userScan, string(keyLogin)))), keyData)))    // user's token id
+	data.Set("username", utils.Encode64(utils.Encrypt(utils.Compress([]byte(userScan)), keyData)))                                  // username
+	salt := make([]byte, 16)                                                                                                        // generate a random salt
+	rand.Read(salt)                                                                                                                 // check if it is random
+	password := argon2Key(keyLogin, salt)                                                                                           // hash the password with argon2
+	data.Set("password", utils.Encode64(utils.Encrypt(utils.Compress(password), keyData)))                                          // password
+	data.Set("salt", utils.Encode64(salt))                                                                                          // salt to base64  //TO-DO: need to encode every item?
+	sessionToken := make([]byte, 16)                                                                                                // generate a random token
+	rand.Read(sessionToken)                                                                                                         // check if it is random
+	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(sessionToken)), keyData)))                         // user's session token
 	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), keyData))) // last seen date for session management
 
 	// Compression and encoding of the public key
 	data.Set("pubkey", utils.Encode64(utils.Compress(pubJSON))) // TO-DO: handle this when doing public key signature
 
 	// Compression, encryption and encoding of the private key
-	data.Set("prikey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData)))  // TO-DO: handle this when doing public key signature
+	data.Set("prikey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData))) // TO-DO: handle this when doing public key signature
 
 	r, err := client.PostForm("https://localhost:10443", data) // send a POST request
 	chk(err)
 	io.Copy(os.Stdout, r.Body) // show the body of the response (it is a reader)
 	fmt.Println()
-	r.Body.Close()             // close the reader of the body
+	r.Body.Close() // close the reader of the body
 }
 
 // Function to hash the password with argon2
-func argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and generateToken also
+func argon2Key(password []byte, salt []byte) []byte { // TO-DO: move to utils and generateToken also
 	var time uint32 = 1 // TO-DO: ask if these metrics are correct
 	var memory uint32 = 64 * 1024
 	var threads uint8 = 4
@@ -183,10 +184,10 @@ func argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and
 
 // generateToken generates a token based on the user and password to be the id stored in the database
 func generateToken(user string, password string) string { // TO-DO: chheck if this method is correct, because getting the token from the username and keyLogin may not be too good
-    salt := "my-secret-salt" // TO-DO: change this ask if it is correct
-    data := []byte(user + password + salt)
-    hash := sha512.Sum512(data)
-    return hex.EncodeToString(hash[:])
+	salt := "my-secret-salt" // TO-DO: change this ask if it is correct
+	data := []byte(user + password + salt)
+	hash := sha512.Sum512(data)
+	return hex.EncodeToString(hash[:])
 }
 
 // randomPasswordGenerator generates a random password based on entered parameters by the user
@@ -206,7 +207,8 @@ func randomPasswordGenerator(passScan string) {
 	os.Stdout.WriteString("\n")
 
 	// Check if the length is a number
-	/*length*/_, err := strconv.Atoi(lengthScan.Text())
+	/*length*/
+	_, err := strconv.Atoi(lengthScan.Text())
 	if err != nil {
 		os.Stdout.WriteString("* The length must be a number\n")
 		os.Exit(1)
@@ -239,7 +241,7 @@ func Run() {
 	}
 	client := &http.Client{Transport: tr}
 
-	// Hash the password with SHA512 
+	// Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte("contraseña del cliente"))
 	keyLogin := keyClient[:32]  // one half for the login (256bits)
 	keyData := keyClient[32:64] // the other half for the data (256bits)
@@ -257,9 +259,9 @@ func Run() {
 	chk(err)
 
 	// ** ejemplo de registro
-	data := url.Values{}                      // estructura para contener los valores
-	data.Set("cmd", "register")               // comando (string)
-	data.Set("user", "usuario")               // usuario (string)
+	data := url.Values{}                       // estructura para contener los valores
+	data.Set("cmd", "register")                // comando (string)
+	data.Set("user", "usuario")                // usuario (string)
 	data.Set("pass", utils.Encode64(keyLogin)) // "contraseña" a base64
 
 	// comprimimos y codificamos la clave pública
@@ -278,7 +280,7 @@ func Run() {
 	data = url.Values{}
 	data.Set("cmd", "login")                                  // comando (string)
 	data.Set("user", "usuario")                               // usuario (string)
-	data.Set("pass", utils.Encode64(keyLogin))                 // contraseña (a base64 porque es []byte)
+	data.Set("pass", utils.Encode64(keyLogin))                // contraseña (a base64 porque es []byte)
 	r, err = client.PostForm("https://localhost:10443", data) // enviamos por POST
 	chk(err)
 	resp := server.Resp{}
@@ -292,8 +294,8 @@ func Run() {
 	chk(err)
 
 	data = url.Values{}
-	data.Set("cmd", "data")                    // comando (string)
-	data.Set("user", "usuario")                // usuario (string)
+	data.Set("cmd", "data")                     // comando (string)
+	data.Set("user", "usuario")                 // usuario (string)
 	data.Set("pass", utils.Encode64(keyLogin))  // contraseña (a base64 porque es []byte)
 	data.Set("token", utils.Encode64(badToken)) // token incorrecto
 	r, err = client.PostForm("https://localhost:10443", data)
@@ -304,8 +306,8 @@ func Run() {
 
 	// ** ejemplo de data con token correcto
 	data = url.Values{}
-	data.Set("cmd", "data")                      // comando (string)
-	data.Set("user", "usuario")                  // usuario (string)
+	data.Set("cmd", "data")                       // comando (string)
+	data.Set("user", "usuario")                   // usuario (string)
 	data.Set("pass", utils.Encode64(keyLogin))    // contraseña (a base64 porque es []byte)
 	data.Set("token", utils.Encode64(resp.Token)) // token correcto
 	r, err = client.PostForm("https://localhost:10443", data)

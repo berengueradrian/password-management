@@ -1,17 +1,16 @@
 /*
-	Server
+Server
 */
 package server
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
 	//"time"
-	"golang.org/x/crypto/scrypt"
 )
 
 // chk checks and exits if there are errors (saves writing in simple programs)
@@ -23,13 +22,13 @@ func chk(e error) {
 
 // ejemplo de tipo para un usuario
 type user struct {
-	Token []byte            // token de identificación
-	Name  []byte            // nombre de usuario
-	Password  []byte            // hash de la contraseña
-	Salt  []byte            // sal para la contraseña
+	Token        []byte            // token de identificación
+	Name         []byte            // nombre de usuario
+	Password     []byte            // hash de la contraseña
+	Salt         []byte            // sal para la contraseña
 	SessionToken []byte            // token de sesión
-	Seen  []byte         // última vez que fue visto
-	Data  map[string]string // datos adicionales del usuario
+	Seen         []byte            // última vez que fue visto
+	Data         map[string]string // datos adicionales del usuario
 }
 
 // mapa con todos los usuarios
@@ -61,16 +60,16 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// USer data
 		u := user{}
-		u.Token = []byte(req.Form.Get("token"))         // token id
-		u.Name = []byte(req.Form.Get("username"))       // username
-		u.Password = []byte(req.Form.Get("password"))   // password
-		u.Salt = []byte(req.Form.Get("salt"))           // salt
+		u.Token = []byte(req.Form.Get("token"))                // token id
+		u.Name = []byte(req.Form.Get("username"))              // username
+		u.Password = []byte(req.Form.Get("password"))          // password
+		u.Salt = []byte(req.Form.Get("salt"))                  // salt
 		u.SessionToken = []byte(req.Form.Get("session_token")) // session token
-		u.Seen = []byte(req.Form.Get("last_seen"))        // last time the user was seen
+		u.Seen = []byte(req.Form.Get("last_seen"))             // last time the user was seen
 
-		u.Data = make(map[string]string)                // reserve space for additional data
-		u.Data["private"] = req.Form.Get("prikey")      // private key
-		u.Data["public"] = req.Form.Get("pubkey")       // public key
+		u.Data = make(map[string]string)           // reserve space for additional data
+		u.Data["private"] = req.Form.Get("prikey") // private key
+		u.Data["public"] = req.Form.Get("pubkey")  // public key
 
 		// Open db connection
 		db := utils.ConnectDB()
@@ -78,19 +77,32 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// Insert data into the database
 		insert, err := db.Query("INSERT INTO users (token, username, password, salt, session_token, last_seen) VALUES (?, ?, ?, ?, ?, ?)", u.Token, u.Name, u.Password, u.Salt, u.SessionToken, u.Seen)
-		chk(err) // check for errors
+		chk(err)             // check for errors
 		defer insert.Close() // close the insert statement
-		
+
 		response(w, true, "Usuario registrado", u.Token)
 
-	case "login": // ** login
-		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
-		if !ok {
+	case "login":
+
+		// Get user data
+		u := user{}
+		u.Name = []byte(req.Form.Get("user"))
+		u.Password = []byte(req.Form.Get("pass"))
+
+		// Check if user is in DB
+		db := utils.ConnectDB()
+		defer db.Close()
+		result, err := db.Query("SELECT username FROM users where username = ?", u.Name)
+		if err != nil {
 			response(w, false, "Usuario inexistente", nil)
 			return
 		}
 
-		password := utils.Decode64(req.Form.Get("pass"))          // obtenemos la contraseña (keyLogin)
+		fmt.Println(result.Columns())
+		//fmt.Println(u.Name)
+		//fmt.Println(utils.Decode64(u.Name))
+
+		/* password := utils.Decode64(req.Form.Get("pass"))          // obtenemos la contraseña (keyLogin)
 		hash, _ := scrypt.Key(password, u.Salt, 16384, 8, 1, 32) // scrypt de keyLogin (argon2 es mejor)
 		if !bytes.Equal(u.Password, hash) {                          // comparamos
 			response(w, false, "Credenciales inválidas", nil)
@@ -101,14 +113,14 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			rand.Read(u.Token)         // el token es aleatorio
 			//gUsers[u.Name] = u
 			response(w, true, "Credenciales válidas", u.Token)
-		}
+		} */
 
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {
 			response(w, false, "No autentificado", nil)
 			return
-		} else if (u.Token == nil) /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
+		} else if u.Token == nil /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
 			// sin token o con token expirado
 			response(w, false, "No autentificado", nil)
 			return
