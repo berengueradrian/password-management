@@ -76,7 +76,11 @@ func Login() {
 	data.Set("user", utils.Encode64(utils.Encrypt(utils.Compress([]byte(userScan)), keyData)))           // username
 	data.Set("pass", utils.Encode64(utils.Encrypt(utils.Compress(keyLogin), keyData)))                   // password
 	data.Set("token", utils.Encode64(utils.Compress([]byte(generateToken(userScan, string(keyLogin)))))) // ID Token
-	r, err := client.PostForm("https://localhost:10443", data)                                           // POST request
+	sessionToken := make([]byte, 16)
+	rand.Read(sessionToken)
+	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(sessionToken)), keyData)))                         // Session token
+	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), keyData))) // Last seen
+	r, err := client.PostForm("https://localhost:10443", data)                                                                      // POST request
 	chk(err)
 
 	// Obtain response from server

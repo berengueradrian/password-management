@@ -88,6 +88,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		u.Name = []byte(req.Form.Get("user"))
 		u.Password = []byte(req.Form.Get("pass"))
 		u.Token = []byte(req.Form.Get("token"))
+		u.SessionToken = []byte(req.Form.Get("session_token"))
+		u.Seen = []byte(req.Form.Get("last_seen"))
 
 		// Return database information
 		db := utils.ConnectDB()
@@ -98,10 +100,17 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		// Parse database information, in case that the user exists
+		// Parse database information in case the user exists
 		var username, password, session_token, salt string
 		if result.Next() {
-			err := result.Scan(&username, &password, &session_token, &salt)
+			// Update session_token and last_seen fields
+			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where token=?", u.SessionToken, u.Seen, u.Token)
+			if err != nil {
+				responseLogin(w, false, sLogin{}, "", "No se pudo iniciar sesión por un fallo del sistema, vuelva a intentarlo")
+				return
+			}
+
+			err = result.Scan(&username, &password, &session_token, &salt)
 			chk(err)
 			data := sLogin{Username: username, Password: password, Salt: salt}
 			responseLogin(w, true, data, session_token, "Usuario encontrado")
