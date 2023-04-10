@@ -6,7 +6,6 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
@@ -88,32 +87,27 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		u := user{}
 		u.Name = []byte(req.Form.Get("user"))
 		u.Password = []byte(req.Form.Get("pass"))
+		u.Token = []byte(req.Form.Get("token"))
 
-		// Check if user is in DB
+		// Return database information
 		db := utils.ConnectDB()
 		defer db.Close()
-		result, err := db.Query("SELECT username FROM users where username = ?", u.Name)
+		result, err := db.Query("SELECT username,password,session_token,salt FROM users where token = ?", u.Token)
 		if err != nil {
-			response(w, false, "Usuario inexistente", nil)
+			responseLogin(w, false, sLogin{}, "", "Error inesperado")
 			return
 		}
 
-		fmt.Println(result.Columns())
-		//fmt.Println(u.Name)
-		//fmt.Println(utils.Decode64(u.Name))
-
-		/* password := utils.Decode64(req.Form.Get("pass"))          // obtenemos la contraseña (keyLogin)
-		hash, _ := scrypt.Key(password, u.Salt, 16384, 8, 1, 32) // scrypt de keyLogin (argon2 es mejor)
-		if !bytes.Equal(u.Password, hash) {                          // comparamos
-			response(w, false, "Credenciales inválidas", nil)
-
+		// Parse database information, in case that the user exists
+		var username, password, session_token, salt string
+		if result.Next() {
+			err := result.Scan(&username, &password, &session_token, &salt)
+			chk(err)
+			data := sLogin{Username: username, Password: password, Salt: salt}
+			responseLogin(w, true, data, session_token, "Usuario encontrado")
 		} else {
-			//u.Seen = time.Now()        // asignamos tiempo de login
-			u.Token = make([]byte, 16) // token (16 bytes == 128 bits)
-			rand.Read(u.Token)         // el token es aleatorio
-			//gUsers[u.Name] = u
-			response(w, true, "Credenciales válidas", u.Token)
-		} */
+			responseLogin(w, false, sLogin{}, "", "Usuarion inexistente")
+		}
 
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
@@ -151,10 +145,30 @@ type Resp struct {
 	Token []byte // session token to be used by the client
 }
 
+type sLogin struct {
+	Username string
+	Password string
+	Salt     string
+}
+
+type RespLogin struct {
+	Ok    bool   // true -> correct, false -> error
+	Data  sLogin // additional message
+	Token string // session token to be used by the client
+	Msg   string
+}
+
 // Function to write the server's response
 func response(w io.Writer, ok bool, msg string, token []byte) {
 	r := Resp{Ok: ok, Msg: msg, Token: token} // format the response
 	rJSON, err := json.Marshal(&r)            // encode in JSON
 	chk(err)                                  // check for errors
 	w.Write(rJSON)                            // write the resulting JSON
+}
+
+func responseLogin(w io.Writer, ok bool, data sLogin, token string, msg string) {
+	r := RespLogin{Ok: ok, Data: data, Token: token, Msg: msg}
+	rJSON, err := json.Marshal(&r)
+	chk(err)
+	w.Write(rJSON)
 }
