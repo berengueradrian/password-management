@@ -104,7 +104,7 @@ func Login() {
 	// Finish request
 	r.Body.Close()
 
-	// TO-DO check login correct
+	// TODO check login correct
 }
 
 // User's registration in the password management system
@@ -175,17 +175,17 @@ func Register() {
 	rand.Read(salt)                                                                                                                 // check if it is random
 	password := argon2Key(keyLogin, salt)                                                                                           // hash the password with argon2
 	data.Set("password", utils.Encode64(utils.Encrypt(utils.Compress(password), keyData)))                                          // password
-	data.Set("salt", utils.Encode64(salt))                                                                                          // salt to base64  //TO-DO: need to encode every item?
+	data.Set("salt", utils.Encode64(salt))                                                                                          // salt to base64  //TODO: need to encode/compress every item?
 	sessionToken := make([]byte, 16)                                                                                                // generate a random token
 	rand.Read(sessionToken)                                                                                                         // check if it is random
 	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(sessionToken)), keyData)))                         // user's session token
 	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), keyData))) // last seen date for session management
 
 	// Compression and encoding of the public key
-	data.Set("pubkey", utils.Encode64(utils.Compress(pubJSON))) // TO-DO: handle this when doing public key signature
+	data.Set("pubkey", utils.Encode64(utils.Compress(pubJSON))) // TODO: handle this when doing public key signature
 
 	// Compression, encryption and encoding of the private key
-	data.Set("prikey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData))) // TO-DO: handle this when doing public key signature
+	data.Set("prikey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData))) // TODO: handle this when doing public key signature
 
 	r, err := client.PostForm("https://localhost:10443", data) // send a POST request
 	chk(err)
@@ -195,8 +195,8 @@ func Register() {
 }
 
 // Function to hash the password with argon2
-func argon2Key(password []byte, salt []byte) []byte { // TO-DO: move to utils and generateToken also
-	var time uint32 = 1 // TO-DO: ask if these metrics are correct
+func argon2Key(password []byte, salt []byte) []byte { // TODO: move to utils and generateToken also
+	var time uint32 = 1 // TODO: ask if these metrics are correct
 	var memory uint32 = 64 * 1024
 	var threads uint8 = 4
 	var keyLen uint32 = 32
@@ -206,8 +206,8 @@ func argon2Key(password []byte, salt []byte) []byte { // TO-DO: move to utils an
 }
 
 // generateToken generates a token based on the user and password to be the id stored in the database
-func generateToken(user string, password string) string { // TO-DO: chheck if this method is correct, because getting the token from the username and keyLogin may not be too good
-	salt := "my-secret-salt" // TO-DO: change this ask if it is correct
+func generateToken(user string, password string) string { // TODO: chheck if this method is correct, because getting the token from the username and keyLogin may not be too good
+	salt := "my-secret-salt" // TODO: change this ask if it is correct
 	data := []byte(user + password + salt)
 	hash := sha512.Sum512(data)
 	return hex.EncodeToString(hash[:])
@@ -216,7 +216,7 @@ func generateToken(user string, password string) string { // TO-DO: chheck if th
 // randomPasswordGenerator generates a random password based on entered parameters by the user
 func randomPasswordGenerator(passScan string) {
 
-	// TO-DO Check the algorithm and see if we want to do it like this or not
+	// TODO Check the algorithm and see if we want to do it like this or not
 	// we could do it like this just for the register and for adding
 	// new credentials we could do another algorithm maybe made by us
 	// but we have to ask the user for length complexity and gruops of characters at least
