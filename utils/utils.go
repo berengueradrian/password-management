@@ -15,6 +15,9 @@ import (
     _ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"os"
+	"crypto/sha512"
+	"encoding/hex"
+	"golang.org/x/crypto/argon2"
 )
 
 // chk checks and exits if there are errors (saves writing in simple programs)
@@ -96,4 +99,34 @@ func ConnectDB() *sql.DB {
 	chk(err) // check for errors
 
 	return db
+}
+
+// Function to generate a user's token id
+func GenerateTokenId(user string, password string) string {
+	data := []byte(user + password)
+    hash := sha512.Sum512(data)
+	token := hex.EncodeToString(hash[:])
+    return token
+}
+
+// Function to hash a string
+func HashSHA512(s string) string {
+	data := []byte(s)
+    hash := sha512.Sum512(data)
+	hashed := hex.EncodeToString(hash[:])
+    return hashed
+	// h := sha256.New()
+	// h.Write([]byte(s))
+	// return hex.EncodeToString(h.Sum(nil))
+}
+
+// Hash the password with argon2
+func Argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and generateToken also
+	var time uint32 = 1 // TO-DO: ask if these metrics are correct
+	var memory uint32 = 64 * 1024
+	var threads uint8 = 4
+	var keyLen uint32 = 32
+
+	hash := argon2.IDKey(password, salt, time, memory, threads, keyLen)
+	return hash
 }

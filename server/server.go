@@ -43,40 +43,49 @@ func Run() {
 	http.HandleFunc("/", handler) // assign a global handler
 
 	// Listen on port 10443 and check for errors
+	// localhost.crt is a certificate used to encrypt the data sent between client and server
+	// localhost.key is the private key used to decrypt the data sent between client and server
+	// fourth argument is the server handler, if nil, the http.DefaultServeMux is used (it is a router that maps URLs to functions)
 	chk(http.ListenAndServeTLS(":10443", "localhost.crt", "localhost.key", nil))
 }
 
-// Function to handle the requests
+// Handle the requests
 func handler(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()                              // need to parse the form
 	w.Header().Set("Content-Type", "text/plain") // standard header
 
 	switch req.Form.Get("cmd") { // chech the command
 	case "register": // ** registration
-		_, ok := gUsers[req.Form.Get("user")] // does the user exist?
-		if ok {
-			response(w, false, "Usuario ya registrado", nil)
+
+		// Open db connection
+		db := utils.ConnectDB()
+		defer db.Close() // close the db connection by the end of the function
+
+		selct, err := db.Query("SELECT * FROM users WHERE token = ?", utils.Decode64(req.Form.Get("token")))
+		chk(err)
+		if selct.Next() {
+			response(w, false, "User registered allready", nil)
 			return
 		}
 
-		// USer data
+		// User data
 		u := user{}
-		u.Token = []byte(req.Form.Get("token"))         // token id
-		u.Name = []byte(req.Form.Get("username"))       // username
-		u.Password = []byte(req.Form.Get("password"))   // password
-		u.Salt = []byte(req.Form.Get("salt"))           // salt
-		u.SessionToken = []byte(req.Form.Get("session_token")) // session token
-		u.Seen = []byte(req.Form.Get("last_seen"))        // last time the user was seen
+		u.Token = []byte(utils.Decode64(req.Form.Get("token")))        // token id
+		u.Name = []byte(utils.Decode64(req.Form.Get("username")))      // username
+		salt := make([]byte, 32)                                      // salt
+		_, err = rand.Read(salt)  // generate salt
+		chk(err)                   // check for errors
+		u.Salt = salt
+		password := utils.Argon2Key(utils.Decode64(req.Form.Get("password")), salt) // hash the password with argon2
+		u.Password = password  // password
+		u.SessionToken = []byte(utils.Decode64(req.Form.Get("session_token"))) // session token
+		u.Seen = []byte(utils.Decode64(req.Form.Get("last_seen")))     // last time the user was seen
 
 		u.Data = make(map[string]string)                // reserve space for additional data
 		u.Data["private"] = req.Form.Get("prikey")      // private key
 		u.Data["public"] = req.Form.Get("pubkey")       // public key
 
-		// Open db connection
-		db := utils.ConnectDB()
-		defer db.Close() // close the database connection
-
-		// Insert data into the database
+		// Insert data into the db
 		insert, err := db.Query("INSERT INTO users (token, username, password, salt, session_token, last_seen) VALUES (?, ?, ?, ?, ?, ?)", u.Token, u.Name, u.Password, u.Salt, u.SessionToken, u.Seen)
 		chk(err) // check for errors
 		defer insert.Close() // close the insert statement

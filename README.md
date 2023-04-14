@@ -1,6 +1,11 @@
-# password-management
+# Password management app in Go
 
 This is an application for managing users credentials with a client-server structure made in Go.
+
+## Project structure
+Explain folders and files (db.sql, localhost.crt....)
+## Use
+Explain how to use it
 
 ## Basic functionalities
 
@@ -11,7 +16,6 @@ This is an application for managing users credentials with a client-server struc
 - Secure red transport between client and server made with HTTPS protocol.
 
 ## Extra functionalities
-### These 4 for the moment and we can add some more
 
 - Privacity optimization with '0 knowledge'. The server recieves the data encoded by the client.
 - Random password generator and by profiles (length, characters groups, easy to remember/pronounce).
@@ -19,9 +23,7 @@ This is an application for managing users credentials with a client-server struc
 - Digital signature incorporation to guarantee the origin of the data.
 - Incorporate additional data on every request (such as files, txt, etc).
 
-- For doing PBKDF, Argon2(id)
-
-- Doubts:
+## Doubts
     - **New**:
         - How to do a credentials saving with files or txt, etc?
         - What do we refer when we say random passwords by profiles?

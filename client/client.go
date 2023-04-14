@@ -19,7 +19,6 @@ import (
 	"bufio"
 	"strconv"
 	"time"
-    "encoding/hex"
 	"golang.org/x/crypto/argon2"
 	//"github.com/sethvargo/go-password/password"
 )
@@ -142,20 +141,27 @@ func Register() {
 	pubJSON, err := json.Marshal(&keyPub) // encode with JSON
 	chk(err)
 
-	// **Registration example
+	// **Registration, user's data
 	data := url.Values{}                  // structure to contain the values
 	data.Set("cmd", "register")           // command (string)
-	data.Set("token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(generateToken(userScan, string(keyLogin)))), keyData))) // user's token id
-	data.Set("username", utils.Encode64(utils.Encrypt(utils.Compress([]byte(userScan)), keyData)))           // username
-	salt := make([]byte, 16)              // generate a random salt
-	rand.Read(salt)                       // check if it is random
-	password := argon2Key(keyLogin, salt) // hash the password with argon2
-	data.Set("password", utils.Encode64(utils.Encrypt(utils.Compress(password), keyData))) // password
-	data.Set("salt", utils.Encode64(salt))     // salt to base64  //TO-DO: need to encode every item?
+	// User's token id
+	token := utils.GenerateTokenId(userScan, string(keyLogin)) // generate a token based on username and keyLogin and hash it
+	data.Set("token", utils.Encode64(utils.Compress([]byte(token))))
+	// Username
+	username := utils.HashSHA512(userScan)
+	data.Set("username", utils.Encode64(utils.Compress([]byte(username))))
+	// Password
+	password := utils.HashSHA512(string(keyLogin))
+	data.Set("password", utils.Encode64(utils.Compress([]byte(password))))
+	// Session token
 	sessionToken := make([]byte, 16) // generate a random token
-	rand.Read(sessionToken) // check if it is random
-	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(sessionToken)), keyData))) // user's session token
-	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), keyData))) // last seen date for session management
+	_, err = rand.Read(sessionToken) // check if it is random
+	chk(err)
+	hSessionToken := utils.HashSHA512(string(sessionToken))
+	data.Set("session_token", utils.Encode64(utils.Compress([]byte(hSessionToken))))
+	// Last seen date
+	date := utils.HashSHA512(time.Now().Format("2006-01-02 15:04:05")) // get the current date and hash it
+	data.Set("last_seen", utils.Encode64(utils.Compress([]byte(date)))) // last seen date for session management
 
 	// Compression and encoding of the public key
 	data.Set("pubkey", utils.Encode64(utils.Compress(pubJSON))) // TO-DO: handle this when doing public key signature
@@ -170,7 +176,7 @@ func Register() {
 	r.Body.Close()             // close the reader of the body
 }
 
-// Function to hash the password with argon2
+// Hash the password with argon2
 func argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and generateToken also
 	var time uint32 = 1 // TO-DO: ask if these metrics are correct
 	var memory uint32 = 64 * 1024
@@ -179,14 +185,6 @@ func argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and
 
 	hash := argon2.IDKey(password, salt, time, memory, threads, keyLen)
 	return hash
-}
-
-// generateToken generates a token based on the user and password to be the id stored in the database
-func generateToken(user string, password string) string { // TO-DO: chheck if this method is correct, because getting the token from the username and keyLogin may not be too good
-    salt := "my-secret-salt" // TO-DO: change this ask if it is correct
-    data := []byte(user + password + salt)
-    hash := sha512.Sum512(data)
-    return hex.EncodeToString(hash[:])
 }
 
 // randomPasswordGenerator generates a random password based on entered parameters by the user
