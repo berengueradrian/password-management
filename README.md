@@ -28,9 +28,10 @@ Explain how to use it
         - How to do a credentials saving with files or txt, etc?
         - What do we refer when we say random passwords by profiles?
         - Is it needed to use session token with last seen date and public key signature? (is it good to sign the token for double security?)
-        - Is it needed to encode all data sended to the server even after encrypting it?
-        - Is it good to generate the user's id token since the username and keyLogin?
+        - Is it good to generate the user's id token from the username and keyLogin?
         - Is it needed to cypher the salt?
+        - Cypher all data at once or better one by one?
+        - Is it normal that the public and private keys occupy more than 256 even after compressed?
     - Solved:
         - How to do a pk login? Is it different to the 0 knowledge, because in the 0 knowledge we send the klogin and with pkey it may be unnecessary
         - Capability to generate public and private key credentials is done with RSA as it is allready done in the example or should we add something else? And the certificates as an entry? explore libraries

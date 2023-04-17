@@ -18,6 +18,8 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"golang.org/x/crypto/argon2"
+	"crypto/rsa"
+	"crypto/sha256"
 )
 
 // chk checks and exits if there are errors (saves writing in simple programs)
@@ -109,18 +111,13 @@ func GenerateTokenId(user string, password string) string {
     return token
 }
 
-// Function to hash a string
-func HashSHA512(s string) string {
-	data := []byte(s)
-    hash := sha512.Sum512(data)
-	hashed := hex.EncodeToString(hash[:])
-    return hashed
-	// h := sha256.New()
-	// h.Write([]byte(s))
-	// return hex.EncodeToString(h.Sum(nil))
+// Function to hash, from a []byte value with sha512 and returns a []byte
+func HashSHA512(s []byte) []byte {
+	hash := sha512.Sum512(s)
+	return hash[:]
 }
 
-// Hash the password with argon2
+// Function to hash the password with argon2
 func Argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and generateToken also
 	var time uint32 = 1 // TO-DO: ask if these metrics are correct
 	var memory uint32 = 64 * 1024
@@ -129,4 +126,18 @@ func Argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and
 
 	hash := argon2.IDKey(password, salt, time, memory, threads, keyLen)
 	return hash
+}
+
+// Function to encrypt a message with RSA OAEP
+func EncryptRSA(message []byte, publicKey *rsa.PublicKey) []byte {
+	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, publicKey, message, nil)
+	chk(err) // check for errors
+	return ciphertext
+}
+
+// Function to decrypt a message with RSA OAEP
+func DecryptRSA(ciphertext []byte, privateKey *rsa.PrivateKey) []byte {
+	plaintext, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, privateKey, ciphertext, nil)
+	chk(err) // check for errors
+	return plaintext
 }
