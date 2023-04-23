@@ -211,15 +211,15 @@ func Login() {
 	chk(err)
 
 	// Obtain response from server
-	resp := server.RespLogin{}
+	resp := server.Resp{}
 	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
 
 	// Check login information
 	if !resp.Ok {
 		fmt.Println("\n" + resp.Msg + "\n")
 	} else {
-		retrieved_password := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data.Password), keyData))
-		salt := utils.Decode64(resp.Data.Salt)
+		retrieved_password := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data["Password"].(string)), keyData))
+		salt := utils.Decode64(resp.Data["Salt"].(string))
 		hashed_password := utils.Argon2Key(keyLogin, salt)
 		if bytes.Equal(hashed_password, retrieved_password) {
 			fmt.Println("\nBienvenido " + userScan + "\n")
@@ -227,7 +227,6 @@ func Login() {
 			fmt.Println("\nCredenciales incorrectas para el usuario " + userScan + "\n")
 		}
 	}
-
 	// Finish request
 	r.Body.Close()
 

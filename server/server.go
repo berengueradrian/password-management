@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
@@ -136,7 +137,6 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		response(w, true, "Usuario registrado", data)
 
 	case "login":
-
 		// Get user data
 		u := user{}
 		u.Name = []byte(req.Form.Get("user"))
@@ -150,33 +150,38 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		defer db.Close()
 		result, err := db.Query("SELECT username,password,session_token,salt FROM users where token = ?", u.Token)
 		if err != nil {
-			responseLogin(w, false, sLogin{}, "", "Error inesperado")
+			var aux map[string]interface{}
+			response(w, false, "Error inesperado", aux)
 			return
 		}
 
 		// Parse database information in case the user exists
 		var username, password, session_token, salt string
+		fmt.Println("entra")
 		if result.Next() {
+			fmt.Println("entra")
 			// Update session_token and last_seen fields
 			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where token=?", u.SessionToken, u.Seen, u.Token)
 			if err != nil {
-				responseLogin(w, false, sLogin{}, "", "No se pudo iniciar sesión por un fallo del sistema, vuelva a intentarlo")
+				var aux map[string]interface{}
+				response(w, false, "Error inesperado", aux)
 				return
 			}
 
 			err = result.Scan(&username, &password, &session_token, &salt)
 			chk(err)
-			data := sLogin{Username: username, Password: password, Salt: salt}
-			responseLogin(w, true, data, session_token, "Usuario encontrado")
+			fmt.Println("entra")
+			var data map[string]interface{}
+			fmt.Println("entra")
+			data["Username"] = username
+			data["Password"] = password
+			data["Salt"] = salt
+			fmt.Println("entra")
+			response(w, false, "Usuario encontrado", data)
 		} else {
-			//u.Seen = time.Now()        // asignamos tiempo de login
-			u.Token = make([]byte, 16) // token (16 bytes == 128 bits)
-			rand.Read(u.Token)         // el token es aleatorio
-			//gUsers[u.Name] = u
-			data := map[string]interface{}{
-				"token": u.Token,
-			}
-			response(w, true, "Credenciales válidas", data)
+			var aux map[string]interface{}
+			response(w, false, "Usuario inexistente", aux)
+			return
 		}
 
 	case "data": // ** obtener datos de usuario
