@@ -1,6 +1,11 @@
-# password-management
+# Password management app in Go
 
 This is an application for managing users credentials with a client-server structure made in Go.
+
+## Project structure
+Explain folders and files (db.sql, localhost.crt....)
+## Use
+Explain how to use it
 
 ## Basic functionalities
 
@@ -11,7 +16,6 @@ This is an application for managing users credentials with a client-server struc
 - Secure red transport between client and server made with HTTPS protocol.
 
 ## Extra functionalities
-### These 4 for the moment and we can add some more
 
 - Privacity optimization with '0 knowledge'. The server recieves the data encoded by the client.
 - Random password generator and by profiles (length, characters groups, easy to remember/pronounce).
@@ -19,16 +23,15 @@ This is an application for managing users credentials with a client-server struc
 - Digital signature incorporation to guarantee the origin of the data.
 - Incorporate additional data on every request (such as files, txt, etc).
 
-- For doing PBKDF, Argon2(id)
-
-- Doubts:
+## Doubts
     - **New**:
         - How to do a credentials saving with files or txt, etc?
         - What do we refer when we say random passwords by profiles?
         - Is it needed to use session token with last seen date and public key signature? (is it good to sign the token for double security?)
-        - Is it needed to encode all data sended to the server even after encrypting it?
-        - Is it good to generate the user's id token since the username and keyLogin?
+        - Is it good to generate the user's id token from the username and keyLogin?
         - Is it needed to cypher the salt?
+        - Cypher all data at once or better one by one?
+        - Is it normal that the public and private keys occupy more than 256 even after compressed?
     - Solved:
         - How to do a pk login? Is it different to the 0 knowledge, because in the 0 knowledge we send the klogin and with pkey it may be unnecessary
         - Capability to generate public and private key credentials is done with RSA as it is allready done in the example or should we add something else? And the certificates as an entry? explore libraries

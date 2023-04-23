@@ -15,6 +15,11 @@ import (
     _ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"os"
+	"crypto/sha512"
+	"encoding/hex"
+	"golang.org/x/crypto/argon2"
+	"crypto/rsa"
+	"crypto/sha256"
 )
 
 // chk checks and exits if there are errors (saves writing in simple programs)
@@ -96,4 +101,43 @@ func ConnectDB() *sql.DB {
 	chk(err) // check for errors
 
 	return db
+}
+
+// Function to generate a user's token id
+func GenerateTokenId(user string, password string) string {
+	data := []byte(user + password)
+    hash := sha512.Sum512(data)
+	token := hex.EncodeToString(hash[:])
+    return token
+}
+
+// Function to hash, from a []byte value with sha512 and returns a []byte
+func HashSHA512(s []byte) []byte {
+	hash := sha512.Sum512(s)
+	return hash[:]
+}
+
+// Function to hash the password with argon2
+func Argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and generateToken also
+	var time uint32 = 1 // TO-DO: ask if these metrics are correct
+	var memory uint32 = 64 * 1024
+	var threads uint8 = 4
+	var keyLen uint32 = 32
+
+	hash := argon2.IDKey(password, salt, time, memory, threads, keyLen)
+	return hash
+}
+
+// Function to encrypt a message with RSA OAEP
+func EncryptRSA(message []byte, publicKey *rsa.PublicKey) []byte {
+	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, publicKey, message, nil)
+	chk(err) // check for errors
+	return ciphertext
+}
+
+// Function to decrypt a message with RSA OAEP
+func DecryptRSA(ciphertext []byte, privateKey *rsa.PrivateKey) []byte {
+	plaintext, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, privateKey, ciphertext, nil)
+	chk(err) // check for errors
+	return plaintext
 }

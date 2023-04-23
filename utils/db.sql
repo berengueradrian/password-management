@@ -8,19 +8,21 @@ create table users
     salt          varbinary(256) not null,
     session_token varbinary(256) null,
     last_seen     varbinary(256) null,
+    public_key    varbinary(512) not null,
+    private_key   varbinary(2048) not null,
     constraint token
         primary key (token)
 );
 
-create table public_keys
-(
-    token      varbinary(256) not null,
-    public_key varbinary(256) not null,
-    constraint token
-        primary key (token),
-    constraint token_fk
-        foreign key (token) references users (token)
-);
+-- create table public_keys
+-- (
+--     token      varbinary(256) not null,
+--     public_key varbinary(256) not null,
+--     constraint token
+--         primary key (token),
+--     constraint token_fk
+--         foreign key (token) references users (token)
+-- );
 
 create table credentials
 (
