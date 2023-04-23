@@ -102,7 +102,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
 
 		// Check if the user is already registered
-		selct, err := db.Query("SELECT * FROM users WHERE token = ?", utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("token")), aesKey)))
+		tokenId := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("token")), aesKey))
+		selct, err := db.Query("SELECT * FROM users WHERE token = ?", tokenId)
 		chk(err)
 		if selct.Next() {
 			response(w, false, "User registered already", nil)
@@ -111,7 +112,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// User data
 		u := user{}
-		u.Token = utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("token")), aesKey)) // token id
+		u.Token = tokenId // token id
 		u.Name = utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey) // username
 		salt := make([]byte, 32) // generate a random salt                                    
 		_, err = rand.Read(salt)  
