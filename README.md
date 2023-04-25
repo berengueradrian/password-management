@@ -3,8 +3,11 @@
 This is an application for managing users credentials with a client-server structure made in Go.
 
 ## Project structure
+
 Explain folders and files (db.sql, localhost.crt....)
+
 ## Use
+
 Explain how to use it
 
 ## Basic functionalities
@@ -24,7 +27,9 @@ Explain how to use it
 - Incorporate additional data on every request (such as files, txt, etc).
 
 ## Doubts
+
     - **New**:
+        - Usefull to compress a hash? Ask about the compression, encoding and all these stuff to really understand when and how to do it.
         - How to do a credentials saving with files or txt, etc?
         - What do we refer when we say random passwords by profiles?
         - Is it needed to use session token with last seen date and public key signature? (is it good to sign the token for double security?)
