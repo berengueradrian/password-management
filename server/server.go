@@ -1,18 +1,18 @@
 /*
-	Server
+Server
 */
 package server
 
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
-	"golang.org/x/crypto/scrypt"
-	"crypto/rsa"
-	"crypto/x509"
 )
 
 // Context of the server to maintain the state between requests
@@ -23,21 +23,21 @@ var state struct {
 
 // example of a user
 type user struct {
-	Token []byte            // token de identificación
-	Name  []byte            // nombre de usuario
-	Password  []byte            // hash de la contraseña
-	Salt  []byte            // sal para la contraseña
-	SessionToken []byte            // token de sesión
-	Seen  []byte         // última vez que fue visto
-	Data  map[string]interface{} // datos adicionales del usuario
+	Token        []byte                 // token de identificación
+	Name         []byte                 // nombre de usuario
+	Password     []byte                 // hash de la contraseña
+	Salt         []byte                 // sal para la contraseña
+	SessionToken []byte                 // token de sesión
+	Seen         []byte                 // última vez que fue visto
+	Data         map[string]interface{} // datos adicionales del usuario
 }
 
 // Server's response
 // (begins with uppercase since it is used in the client too)
 // (the variables begin with uppercase to be considered in the encoding)
 type Resp struct {
-	Ok    bool   // true -> correct, false -> error
-	Msg   string // additional message
+	Ok   bool                   // true -> correct, false -> error
+	Msg  string                 // additional message
 	Data map[string]interface{} // data to send in the response
 }
 
@@ -55,9 +55,9 @@ func chk(e error) {
 // Function to write the server's response
 func response(w io.Writer, ok bool, msg string, data map[string]interface{}) {
 	r := Resp{Ok: ok, Msg: msg, Data: data} // format the response
-	rJSON, err := json.Marshal(&r)            // encode in JSON
-	chk(err)                                  // check for errors
-	w.Write(rJSON)                            // write the resulting JSON
+	rJSON, err := json.Marshal(&r)          // encode in JSON
+	chk(err)                                // check for errors
+	w.Write(rJSON)                          // write the resulting JSON
 }
 
 // Manage the server
@@ -67,8 +67,8 @@ func Run() {
 	// Generate a pair of keys for the server (the private key includes the public key)
 	var err error
 	state.privKey, err = rsa.GenerateKey(rand.Reader, 4096) // it takes a bit to generate
-	chk(err) // check for errors
-	state.privKey.Precompute() // accelerate its use with precomputation
+	chk(err)                                                // check for errors
+	state.privKey.Precompute()                              // accelerate its use with precomputation
 
 	http.HandleFunc("/", handler) // assign a global handler
 
@@ -88,10 +88,10 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	case "getSrvPubKey": // ** get the server's public key
 		srvPubKey := x509.MarshalPKCS1PublicKey(&state.privKey.PublicKey) // marshal the public key
 		data := map[string]interface{}{
-			"pubkey": srvPubKey,//state.privKey.PublicKey, // needed marshal for parsing to []byte
+			"pubkey": srvPubKey, //state.privKey.PublicKey, // needed marshal for parsing to []byte
 		}
 		response(w, true, "Server's public key", data)
-		
+
 	case "register": // ** registration
 
 		// Open db connection
@@ -112,51 +112,76 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// User data
 		u := user{}
-		u.Token = tokenId // token id
+		u.Token = tokenId                                                        // token id
 		u.Name = utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey) // username
-		salt := make([]byte, 32) // generate a random salt                                    
-		_, err = rand.Read(salt)  
-		chk(err) // check for errors
-		u.Salt = salt // salt
-		pass := utils.Decrypt(utils.Decode64(req.Form.Get("password")), aesKey) // password
-		password := utils.Argon2Key(pass, salt) // hash the password with argon2
-		u.Password = password  // password with pbkdf applied
-		u.SessionToken = utils.Decrypt(utils.Decode64(req.Form.Get("session_token")), aesKey) // session token
-		u.Seen = utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("last_seen")), aesKey))    // last time the user was seen
-		u.Data = make(map[string]interface{}) // reserve space for additional data
-		u.Data["public"] = utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey) // public key
-		u.Data["private"] = utils.Decode64(req.Form.Get("privkey")) // private key, encrypted with keyData
+		salt := make([]byte, 32)                                                 // generate a random salt
+		_, err = rand.Read(salt)
+		chk(err)                                                                                    // check for errors
+		u.Salt = salt                                                                               // salt
+		pass := utils.Decrypt(utils.Decode64(req.Form.Get("password")), aesKey)                     // password
+		password := utils.Argon2Key(pass, salt)                                                     // hash the password with argon2
+		u.Password = password                                                                       // password with pbkdf applied
+		u.SessionToken = utils.Decrypt(utils.Decode64(req.Form.Get("session_token")), aesKey)       // session token
+		u.Seen = utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("last_seen")), aesKey)) // last time the user was seen
+		u.Data = make(map[string]interface{})                                                       // reserve space for additional data
+		u.Data["public"] = utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey)            // public key
+		u.Data["private"] = utils.Decode64(req.Form.Get("privkey"))                                 // private key, encrypted with keyData
 
 		// Insert data into the db
 		insert, err := db.Query("INSERT INTO users (token, username, password, salt, session_token, last_seen, public_key, private_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", u.Token, u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"])
-		chk(err) // check for errors
+		chk(err)             // check for errors
 		defer insert.Close() // close the insert statement
 		data := map[string]interface{}{
 			"token": u.Token,
 		}
 		response(w, true, "Usuario registrado", data)
 
-	case "login": // ** login
-		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
-		if !ok {
-			response(w, false, "Usuario inexistente", nil)
+	case "login":
+		// Get user data
+		u := user{}
+		u.Name = []byte(req.Form.Get("user"))
+		u.Password = []byte(req.Form.Get("pass"))
+		u.Token = []byte(req.Form.Get("token"))
+		u.SessionToken = []byte(req.Form.Get("session_token"))
+		u.Seen = []byte(req.Form.Get("last_seen"))
+
+		// Return database information
+		db := utils.ConnectDB()
+		defer db.Close()
+		result, err := db.Query("SELECT username,password,session_token,salt FROM users where token = ?", u.Token)
+		if err != nil {
+			var aux map[string]interface{}
+			response(w, false, "Error inesperado", aux)
 			return
 		}
 
-		password := utils.Decode64(req.Form.Get("pass"))          // obtenemos la contraseña (keyLogin)
-		hash, _ := scrypt.Key(password, u.Salt, 16384, 8, 1, 32) // scrypt de keyLogin (argon2 es mejor)
-		if !bytes.Equal(u.Password, hash) {                          // comparamos
-			response(w, false, "Credenciales inválidas", nil)
-
-		} else {
-			//u.Seen = time.Now()        // asignamos tiempo de login
-			u.Token = make([]byte, 16) // token (16 bytes == 128 bits)
-			rand.Read(u.Token)         // el token es aleatorio
-			//gUsers[u.Name] = u
-			data := map[string]interface{}{
-				"token": u.Token,
+		// Parse database information in case the user exists
+		var username, password, session_token, salt string
+		fmt.Println("entra")
+		if result.Next() {
+			fmt.Println("entra")
+			// Update session_token and last_seen fields
+			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where token=?", u.SessionToken, u.Seen, u.Token)
+			if err != nil {
+				var aux map[string]interface{}
+				response(w, false, "Error inesperado", aux)
+				return
 			}
-			response(w, true, "Credenciales válidas", data)
+
+			err = result.Scan(&username, &password, &session_token, &salt)
+			chk(err)
+			fmt.Println("entra")
+			var data map[string]interface{}
+			fmt.Println("entra")
+			data["Username"] = username
+			data["Password"] = password
+			data["Salt"] = salt
+			fmt.Println("entra")
+			response(w, false, "Usuario encontrado", data)
+		} else {
+			var aux map[string]interface{}
+			response(w, false, "Usuario inexistente", aux)
+			return
 		}
 
 	case "data": // ** obtener datos de usuario
@@ -164,7 +189,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		if !ok {
 			response(w, false, "No autentificado", nil)
 			return
-		} else if (u.Token == nil) /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
+		} else if u.Token == nil /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
 			// sin token o con token expirado
 			response(w, false, "No autentificado", nil)
 			return

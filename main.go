@@ -30,16 +30,16 @@ OpenSSL command to generate the certificate/key pair for localhost:
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"password-management/client"
 	"password-management/server"
-	"bufio"
 )
 
 func main() {
 	// For running the server
-	if( len(os.Args) > 1 ) {
+	if len(os.Args) > 1 {
 		switch os.Args[1] {
 			case "-server", "-s", "-srv":
 				fmt.Println("Running the server...")
@@ -52,15 +52,15 @@ func main() {
 		for {
 			// Initial prompt for logging or register in the system
 			os.Stdout.WriteString("--- Welcome to the password management system ---\n" +
-			"- Login or register to store your credentials safely\n\n" +
-			"1. Log in\n" +
-			"2. Register\n" +
-			"q. Quit\n\n" +
-			"- Introduce an option\n" +
-			"> ")
+				"- Login or register to store your credentials safely\n\n" +
+				"1. Log in\n" +
+				"2. Register\n" +
+				"q. Quit\n\n" +
+				"- Introduce an option\n" +
+				"> ")
 			// Read the user input
 			command := bufio.NewScanner(os.Stdin)
-	
+
 			// If the user types an option, it is processed
 			if command.Scan() {
 				switch command.Text() {
