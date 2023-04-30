@@ -23,7 +23,6 @@ var state struct {
 
 // example of a user
 type user struct {
-	Token        []byte                 // token de identificación
 	Name         []byte                 // nombre de usuario
 	Password     []byte                 // hash de la contraseña
 	Salt         []byte                 // sal para la contraseña
@@ -102,8 +101,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
 
 		// Check if the user is already registered
-		tokenId := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("token")), aesKey))
-		selct, err := db.Query("SELECT * FROM users WHERE token = ?", tokenId)
+		username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
+		selct, err := db.Query("SELECT * FROM users WHERE username = ?", username)
 		chk(err)
 		if selct.Next() {
 			response(w, false, "User registered already", nil)
@@ -112,8 +111,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// User data
 		u := user{}
-		u.Token = tokenId                                                        // token id
-		u.Name = utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey) // username
+		u.Name = username // username (PK)
 		salt := make([]byte, 32)                                                 // generate a random salt
 		_, err = rand.Read(salt)
 		chk(err)                                                                                    // check for errors
@@ -128,11 +126,11 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		u.Data["private"] = utils.Decode64(req.Form.Get("privkey"))                                 // private key, encrypted with keyData
 
 		// Insert data into the db
-		insert, err := db.Query("INSERT INTO users (token, username, password, salt, session_token, last_seen, public_key, private_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", u.Token, u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"])
+		insert, err := db.Query("INSERT INTO users (username, password, salt, session_token, last_seen, public_key, private_key) VALUES (?, ?, ?, ?, ?, ?, ?)", u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"])
 		chk(err)             // check for errors
 		defer insert.Close() // close the insert statement
 		data := map[string]interface{}{
-			"token": u.Token,
+			"username": u.Name,
 		}
 		response(w, true, "Usuario registrado", data)
 
@@ -141,14 +139,14 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		u := user{}
 		u.Name = []byte(req.Form.Get("user"))
 		u.Password = []byte(req.Form.Get("pass"))
-		u.Token = []byte(req.Form.Get("token"))
+		// u.Token = []byte(req.Form.Get("token")) // TO-DO(Javi): check, i have changed it
 		u.SessionToken = []byte(req.Form.Get("session_token"))
 		u.Seen = []byte(req.Form.Get("last_seen"))
 
 		// Return database information
 		db := utils.ConnectDB()
 		defer db.Close()
-		result, err := db.Query("SELECT username,password,session_token,salt FROM users where token = ?", u.Token)
+		result, err := db.Query("SELECT username,password,session_token,salt FROM users where username = ?", u.Name) // TO-DO(Javi): check, i have changed it
 		if err != nil {
 			var aux map[string]interface{}
 			response(w, false, "Error inesperado", aux)
@@ -161,7 +159,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		if result.Next() {
 			fmt.Println("entra")
 			// Update session_token and last_seen fields
-			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where token=?", u.SessionToken, u.Seen, u.Token)
+			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where username=?", u.SessionToken, u.Seen, u.Name) // TO-DO(Javi): change the u.Name here
 			if err != nil {
 				var aux map[string]interface{}
 				response(w, false, "Error inesperado", aux)
@@ -189,12 +187,12 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		if !ok {
 			response(w, false, "No autentificado", nil)
 			return
-		} else if u.Token == nil /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
+		} else if u.Name == nil /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
 			// sin token o con token expirado
 			response(w, false, "No autentificado", nil)
 			return
-		} else if !bytes.EqualFold(u.Token, utils.Decode64(req.Form.Get("token"))) {
-			// token no coincide
+		} else if !bytes.EqualFold(u.Name, utils.Decode64(req.Form.Get("username"))) {
+			// username no coincide
 			response(w, false, "No autentificado", nil)
 			return
 		}
@@ -204,7 +202,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		//u.Seen = time.Now()
 		//gUsers[u.Name] = u
 		data := map[string]interface{}{
-			"token": u.Token,
+			"token": u.Name,
 		}
 		response(w, true, string(datos), data)
 

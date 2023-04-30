@@ -123,9 +123,6 @@ func Register() {
 	// **Registration, user's data
 	data := url.Values{}        // structure to contain the values
 	data.Set("cmd", "register") // command (string)
-	// User's token id
-	token := utils.GenerateTokenId(userScan, string(keyLogin))                           // generate a token based on username and keyLogin and hash it
-	data.Set("token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(token)), key))) // TO-DO: check if correct to store it like this
 	// Username
 	data.Set("username", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key)))
 	// Password
@@ -202,7 +199,7 @@ func Login() {
 	data.Set("cmd", "login")                                                                                     // command
 	data.Set("user", utils.Encode64(utils.Encrypt(utils.Compress([]byte(userScan)), keyData)))                   // username
 	data.Set("pass", utils.Encode64(utils.Encrypt(utils.Compress(keyLogin), keyData)))                           // password
-	data.Set("token", utils.Encode64(utils.Compress([]byte(utils.GenerateTokenId(userScan, string(keyLogin)))))) // ID Token
+	//data.Set("token", utils.Encode64(utils.Compress([]byte(utils.GenerateTokenId(userScan, string(keyLogin)))))) // ID Token // TO-DO(Javi): change this
 	sessionToken := make([]byte, 16)
 	rand.Read(sessionToken)
 	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(sessionToken)), keyData)))                         // Session token
