@@ -183,19 +183,6 @@ func Login() {
 	// Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte(passScan))
 	keyLogin := keyClient[:32] // One half for the login (256bits)
-	//keyData := keyClient[32:64] // The other half for the data (256bits)
-
-	// Generate a pair of keys (private, public)
-	/* pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
-	chk(err)
-	pkClient.Precompute() // Accelerate its use with a pre-calculation
-
-	pkJSON, err := json.Marshal(&pkClient) // Encode with JSON
-	chk(err)
-
-	keyPub := pkClient.Public()           // Extract the public key separately
-	pubJSON, err := json.Marshal(&keyPub) // Encode with JSON
-	chk(err) */
 
 	// Obtain public key of the server in case is not available
 	if state.srvPubKey == nil {
@@ -227,19 +214,6 @@ func Login() {
 	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
 	fmt.Println("\n" + resp.Msg + " " + userScan + "." + "\n")
 
-	// Check login information
-	/* if !resp.Ok {
-		fmt.Println("\n" + resp.Msg + "\n")
-	} else {
-		retrieved_password := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data["Password"].(string)), keyData))
-		salt := utils.Decode64(resp.Data["Salt"].(string))
-		hashed_password := utils.Argon2Key(keyLogin, salt)
-		if bytes.Equal(hashed_password, retrieved_password) {
-			fmt.Println("\nLogin correcto. Bienvenido " + userScan + "\n")
-		} else {
-			fmt.Println("\nCredenciales incorrectas para el usuario " + userScan + "\n")
-		}
-	} */
 	// Finish request
 	r.Body.Close()
 }
