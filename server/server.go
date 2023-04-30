@@ -9,7 +9,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
@@ -111,8 +110,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// User data
 		u := user{}
-		u.Name = username // username (PK)
-		salt := make([]byte, 32)                                                 // generate a random salt
+		u.Name = username        // username (PK)
+		salt := make([]byte, 32) // generate a random salt
 		_, err = rand.Read(salt)
 		chk(err)                                                                                    // check for errors
 		u.Salt = salt                                                                               // salt
@@ -135,49 +134,57 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		response(w, true, "Usuario registrado", data)
 
 	case "login":
+
+		// Aux variable for the response
+		var aux map[string]interface{}
+
+		// Decypher AES Key
+		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+
 		// Get user data
 		u := user{}
-		u.Name = []byte(req.Form.Get("user"))
-		u.Password = []byte(req.Form.Get("pass"))
-		// u.Token = []byte(req.Form.Get("token")) // TO-DO(Javi): check, i have changed it
-		u.SessionToken = []byte(req.Form.Get("session_token"))
-		u.Seen = []byte(req.Form.Get("last_seen"))
+		u.Name = utils.Decrypt(utils.Decode64(req.Form.Get("user")), aesKey)
+		u.Password = utils.Decrypt(utils.Decode64(req.Form.Get("pass")), aesKey)
+		u.SessionToken = utils.Decrypt(utils.Decode64(req.Form.Get("session_token")), aesKey)
+		u.Seen = utils.Decrypt(utils.Decode64(req.Form.Get("last_seen")), aesKey)
 
 		// Return database information
 		db := utils.ConnectDB()
 		defer db.Close()
-		result, err := db.Query("SELECT username,password,session_token,salt FROM users where username = ?", u.Name) // TO-DO(Javi): check, i have changed it
+		result, err := db.Query("SELECT password,session_token,salt FROM users where username = ?", u.Name)
 		if err != nil {
 			var aux map[string]interface{}
 			response(w, false, "Error inesperado", aux)
 			return
 		}
 
-		// Parse database information in case the user exists
-		var username, password, session_token, salt string
-		fmt.Println("entra")
+		// Check if any user has been matched
 		if result.Next() {
-			fmt.Println("entra")
+			// Obtain login information
+			var password, session_token, salt []byte
+			var loginMsg string
+			err = result.Scan(&password, &session_token, &salt)
+			chk(err)
+
+			// Check login information
+			providedPass := utils.Argon2Key(u.Password, salt)
+			if bytes.Equal(providedPass, password) {
+				loginMsg = "Login correcto. Bienvenido"
+			} else {
+				loginMsg = "Login fallido. Credenciales incorrectas para el usuario"
+			}
+
 			// Update session_token and last_seen fields
-			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where username=?", u.SessionToken, u.Seen, u.Name) // TO-DO(Javi): change the u.Name here
+			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where username=?", u.SessionToken, u.Seen, u.Name)
 			if err != nil {
-				var aux map[string]interface{}
 				response(w, false, "Error inesperado", aux)
 				return
 			}
 
-			err = result.Scan(&username, &password, &session_token, &salt)
-			chk(err)
-			fmt.Println("entra")
-			var data map[string]interface{}
-			fmt.Println("entra")
-			data["Username"] = username
-			data["Password"] = password
-			data["Salt"] = salt
-			fmt.Println("entra")
-			response(w, false, "Usuario encontrado", data)
+			// Send response
+			response(w, true, loginMsg, aux)
+			return
 		} else {
-			var aux map[string]interface{}
 			response(w, false, "Usuario inexistente", aux)
 			return
 		}
