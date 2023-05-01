@@ -39,10 +39,7 @@ create table users_data
 create table credentials
 (
     users_data_id varbinary(256) not null,
-    alias    varbinary(256) not null,
-    username     varbinary(256) null,
     password varbinary(256) not null,
-    site     varbinary(256) null,
     constraint users_data_id
         primary key (users_data_id),
     constraint users_data_id

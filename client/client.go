@@ -4,23 +4,22 @@ Client
 package client
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"password-management/server"
 	"password-management/utils"
-
-	//"github.com/sethvargo/go-password/password"
-	"crypto/x509"
-	"encoding/base64"
-	"io/ioutil"
 	"time"
 )
 
@@ -28,6 +27,9 @@ import (
 var state struct {
 	privKey   *rsa.PrivateKey // client's private key (includes the public key)
 	srvPubKey *rsa.PublicKey  // server's public key
+	client    *http.Client
+	user_id   []byte
+	kData     []byte
 }
 
 // chk checks and exits if there are errors (saves writing in simple programs) *** use it from utils and that's it ***
@@ -179,10 +181,13 @@ func Login() {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: tr}
+	state.client = client
 
 	// Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte(passScan))
-	keyLogin := keyClient[:32] // One half for the login (256bits)
+	keyLogin := keyClient[:32]  // One half for the login (256bits)
+	keyData := keyClient[32:64] // the other half for the data (256bits)
+	state.kData = keyData
 
 	// Obtain public key of the server in case is not available
 	if state.srvPubKey == nil {
@@ -216,10 +221,53 @@ func Login() {
 
 	// Finish request
 	r.Body.Close()
+
+	// Save user identifier in state if the log in process was correct
+	if resp.Ok {
+		state.user_id = utils.HashSHA512([]byte(userScan))
+		// Enter to the user menu
+		UserMenu()
+	}
+
+}
+
+func UserMenu() {
+	// Prompt menu
+	os.Stdout.WriteString("--- User Menu ---\n" +
+		"- Choose an action to perform\n\n" +
+		"1. See stored credentials\n" +
+		"2. Store a new credential\n" +
+		"3. Modify an existent credential\n" +
+		"4. Delete a credential\n\n" +
+		"- Introduce an option\n" +
+		"> ")
+	// Read user input
+	command := bufio.NewScanner(os.Stdin)
+	if command.Scan() {
+		switch command.Text() {
+		case "1":
+			fmt.Println()
+			ListAllCredentials()
+		case "2":
+			fmt.Println()
+			CreateCredential()
+		case "3":
+			fmt.Println()
+			ModifyCredential()
+		case "4":
+			fmt.Println()
+			DeleteCredential()
+		case "q": // exit
+			fmt.Println("- Exit...\n")
+			os.Exit(0)
+		default:
+			fmt.Println("Uknown command '", command.Text(), "'.")
+		}
+	}
 }
 
 // Run manages the client
-func Run() {
+/* func Run() {
 
 	// We create a special client that does not check the validity of the certificates
 	// This is necessary because we use self-signed certificates (for development & testing)
@@ -304,3 +352,4 @@ func Run() {
 	fmt.Println()
 
 }
+*/

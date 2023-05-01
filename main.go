@@ -41,12 +41,12 @@ func main() {
 	// For running the server
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-			case "-server", "-s", "-srv":
-				fmt.Println("Running the server...")
-				server.Run()
-			default:
-				fmt.Println("Uknown command '", os.Args[1], "'.\n")
-				fmt.Println("Usage: go run main.go [-server|-s|-srv]")
+		case "-server", "-s", "-srv":
+			fmt.Println("Running the server...")
+			server.Run()
+		default:
+			fmt.Println("Uknown command '", os.Args[1], "'.\n")
+			fmt.Println("Usage: go run main.go [-server|-s|-srv]")
 		}
 	} else { // no arguments, execute the client
 		for {

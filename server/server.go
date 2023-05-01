@@ -30,6 +30,16 @@ type user struct {
 	Data         map[string]interface{} // datos adicionales del usuario
 }
 
+// Credentials has also id and user_id fields
+// We don't need it for the response so we don't add it to the struct
+type Credential struct {
+	Alias    string
+	Site     string
+	Username string
+	Password string
+	Key      string
+}
+
 // Server's response
 // (begins with uppercase since it is used in the client too)
 // (the variables begin with uppercase to be considered in the encoding)
@@ -75,6 +85,62 @@ func Run() {
 	// localhost.key is the private key used to decrypt the data sent between client and server
 	// fourth argument is the server handler, if nil, the http.DefaultServeMux is used (it is a router that maps URLs to functions)
 	chk(http.ListenAndServeTLS(":10443", "localhost.crt", "localhost.key", nil))
+}
+
+func createCredential(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get credential information
+	c := Credential{}
+	c.Alias = req.Form.Get("alias")
+	c.Site = req.Form.Get("site")
+	c.Username = req.Form.Get("username")
+	c.Password = req.Form.Get("password")
+	c.Key = req.Form.Get("aes_key")
+	cred_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("cred_id")), state.privKey))
+	cred_user_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("user_id")), state.privKey))
+
+	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?)", cred_id, utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias))
+	chk(err)
+	_, errr := db.Query("INSERT INTO credentials values (?,?)", cred_id, utils.Decode64(c.Password))
+	chk(errr)
+}
+
+func getAllCredentials(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get request data
+	user_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("user_id")), state.privKey))
+
+	// Get list of credentials
+	result, err := db.Query(`SELECT alias, site, username, aes_key, password
+														FROM users_data, credentials
+														WHERE user_id=? and users_data.id=credentials.users_data_id`,
+		user_id)
+	chk(err)
+
+	var creds []Credential
+	c := Credential{}
+	var alias, site, username, key, password []byte
+	for result.Next() {
+		result.Scan(&alias, &site, &username, &key, &password)
+		c.Alias = utils.Encode64(alias)
+		c.Site = utils.Encode64(site)
+		c.Username = utils.Encode64(username)
+		c.Key = utils.Encode64(key)
+		c.Password = utils.Encode64(password)
+		creds = append(creds, c)
+	}
+
+	// Response
+	data := map[string]interface{}{
+		"credentials": creds,
+	}
+	response(w, true, "Crendenciales recuperadas con exito", data)
 }
 
 // Handle the requests
@@ -188,7 +254,10 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			response(w, false, "Usuario inexistente", aux)
 			return
 		}
-
+	case "postCred":
+		createCredential(w, req)
+	case "getAllCred":
+		getAllCredentials(w, req)
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {
