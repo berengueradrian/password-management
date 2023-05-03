@@ -19,6 +19,7 @@ func showCredential(cred server.Credential) {
 
 	// Prompt information
 	fmt.Println(cred)
+	fmt.Println()
 }
 
 func ListAllCredentials() {
@@ -114,7 +115,55 @@ func CreateCredential() {
 }
 
 func ModifyCredential() {
-	fmt.Println("Modify a credential....")
+	var alias, newSite, newAlias, newUsername, newPassword string
+
+	// Collect user data
+	fmt.Print("-- Modify a credential --\n")
+	fmt.Print("- Alias: ")
+	fmt.Scan(&alias)
+	fmt.Print("- New alias: ")
+	fmt.Scan(&newAlias)
+	fmt.Print("- New site: ")
+	fmt.Scan(&newSite)
+	fmt.Print("- New username: ")
+	fmt.Scan(&newUsername)
+	fmt.Print("- New password: ")
+	fmt.Scan(&newPassword)
+
+	// Get credential id
+	cred_id := utils.HashSHA512([]byte(alias + string(state.user_id)))
+	// Compute new id
+	newId := utils.HashSHA512([]byte(newAlias + string(state.user_id)))
+
+	// Generate random key to encrypt the data with AES
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Set request values
+	data := url.Values{}
+	data.Set("cmd", "putCred")
+	data.Set("newAlias", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newAlias)), state.kData)))
+	data.Set("newSite", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newSite)), state.kData)))
+	data.Set("newUsername", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newUsername)), state.kData)))
+	data.Set("aes_key", utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData)))
+	data.Set("cred_id", utils.Encode64(utils.EncryptRSA(utils.Compress(cred_id), state.srvPubKey)))
+	data.Set("newId", utils.Encode64(utils.EncryptRSA(utils.Compress(newId), state.srvPubKey)))
+	data.Set("newPassword", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newPassword)), key)))
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+	fmt.Println("\n" + resp.Msg + "\n")
+
+	// Finish request
+	r.Body.Close()
+
+	// Enter to the user menu
+	UserMenu()
 }
 
 func DeleteCredential() {

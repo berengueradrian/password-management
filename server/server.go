@@ -102,6 +102,7 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	cred_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("cred_id")), state.privKey))
 	cred_user_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("user_id")), state.privKey))
 
+	// Insert information
 	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?)", cred_id, utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias))
 	chk(err)
 	_, errr := db.Query("INSERT INTO credentials values (?,?)", cred_id, utils.Decode64(c.Password))
@@ -141,6 +142,35 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 		"credentials": creds,
 	}
 	response(w, true, "Crendenciales recuperadas con exito", data)
+}
+
+func modifyCredentials(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get credential information
+	c := Credential{}
+	c.Alias = req.Form.Get("newAlias")
+	c.Site = req.Form.Get("newSite")
+	c.Username = req.Form.Get("newUsername")
+	c.Password = req.Form.Get("newPassword")
+	c.Key = req.Form.Get("aes_key")
+	cred_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("cred_id")), state.privKey))
+	newId := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("newId")), state.privKey))
+
+	// Search credential id
+	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	chk(errs)
+	if !result.Next() {
+		response(w, false, "Credential not found", nil)
+	}
+
+	// Update information
+	_, err := db.Query("UPDATE users_data SET alias=?, site=?, username=?, aes_key=?, id=? WHERE id=?", utils.Decode64(c.Alias), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), newId, cred_id)
+	chk(err)
+	_, errr := db.Query("UPDATE credentials SET password=? WHERE users_data_id=?", utils.Decode64(c.Password), newId)
+	chk(errr)
 }
 
 // Handle the requests
@@ -258,6 +288,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		createCredential(w, req)
 	case "getAllCred":
 		getAllCredentials(w, req)
+	case "putCred":
+		modifyCredentials(w, req)
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {

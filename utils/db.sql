@@ -43,7 +43,7 @@ create table credentials
     constraint users_data_id
         primary key (users_data_id),
     constraint users_data_id
-        foreign key (users_data_id) references users_data (id)
+        foreign key (users_data_id) references users_data (id) on update cascade
 );
 
 -- files table where the files associated to the credentials are stored
