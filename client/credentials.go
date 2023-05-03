@@ -18,7 +18,10 @@ func showCredential(cred server.Credential) {
 	cred.Password = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Password), []byte(cred.Key))))
 
 	// Prompt information
-	fmt.Println(cred)
+	fmt.Println("> Alias: " + cred.Alias)
+	fmt.Println("  Site: " + cred.Site)
+	fmt.Println("  Username: " + cred.Username)
+	fmt.Println("  Password: " + cred.Password)
 	fmt.Println()
 }
 
@@ -167,5 +170,33 @@ func ModifyCredential() {
 }
 
 func DeleteCredential() {
-	fmt.Println("Delete a credential....")
+	var alias string
+
+	// Collect user data
+	fmt.Print("-- Delete a credential --\n")
+	fmt.Print("- Alias: ")
+	fmt.Scan(&alias)
+
+	// Get credential id
+	cred_id := utils.HashSHA512([]byte(alias + string(state.user_id)))
+
+	// Set request values
+	data := url.Values{}
+	data.Set("cmd", "deleteCred")
+	data.Set("cred_id", utils.Encode64(utils.EncryptRSA(utils.Compress(cred_id), state.srvPubKey)))
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+	fmt.Println("\n" + resp.Msg + "\n")
+
+	// Finish request
+	r.Body.Close()
+
+	// Enter to the user menu
+	UserMenu()
 }

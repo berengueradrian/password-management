@@ -173,6 +173,28 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(errr)
 }
 
+func deleteCredentials(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get credential information
+	cred_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("cred_id")), state.privKey))
+
+	// Search credential id
+	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	chk(errs)
+	if !result.Next() {
+		response(w, false, "Credential not found", nil)
+	}
+
+	// Delete credential
+	_, err := db.Query("DELETE FROM credentials WHERE users_data_id=?", cred_id)
+	chk(err)
+	_, errr := db.Query("DELETE FROM users_data WHERE id=?", cred_id)
+	chk(errr)
+}
+
 // Handle the requests
 func handler(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()                              // need to parse the form
@@ -290,6 +312,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		getAllCredentials(w, req)
 	case "putCred":
 		modifyCredentials(w, req)
+	case "deleteCred":
+		deleteCredentials(w, req)
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {
