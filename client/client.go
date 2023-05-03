@@ -4,7 +4,6 @@ Client
 package client
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
@@ -35,6 +34,27 @@ var state struct {
 func chk(e error) {
 	if e != nil {
 		panic(e)
+	}
+}
+
+func obtainPubKey(client *http.Client) {
+	serverData := url.Values{}                                          // structure to contain the values
+	serverData.Set("cmd", "getSrvPubKey")                               // command (string)
+	resp, err := client.PostForm("https://localhost:10443", serverData) // send the request
+	chk(err)                                                            // check for errors
+	body, err := ioutil.ReadAll(resp.Body)                              // read the response
+	chk(err)                                                            // check for errors
+	var respBody map[string]interface{}
+	errr := json.Unmarshal(body, &respBody) // save the server's public key in the state
+	chk(errr)                               // check for errors
+	if val, ok := respBody["Data"].(map[string]interface{})["pubkey"]; ok {
+		decoded, err := base64.StdEncoding.DecodeString(val.(string))
+		parsedPubKey, err := x509.ParsePKCS1PublicKey(decoded) // extract the public key, needed x509 to obtain from []byte
+		chk(err)
+		state.srvPubKey = parsedPubKey
+	} else { // TO
+		fmt.Println("Error: could not get the server's public key, possible Server Error")
+		os.Exit(0)
 	}
 }
 
@@ -81,24 +101,7 @@ func Register() {
 	client := &http.Client{Transport: tr}
 
 	// **Request to get the server's public key (to encrypt the registration data and add an extra layer of security)
-	serverData := url.Values{}                                          // structure to contain the values
-	serverData.Set("cmd", "getSrvPubKey")                               // command (string)
-	resp, err := client.PostForm("https://localhost:10443", serverData) // send the request
-	chk(err)                                                            // check for errors
-	body, err := ioutil.ReadAll(resp.Body)                              // read the response
-	chk(err)                                                            // check for errors
-	var respBody map[string]interface{}
-	errr := json.Unmarshal(body, &respBody) // save the server's public key in the state
-	chk(errr)                               // check for errors
-	if val, ok := respBody["Data"].(map[string]interface{})["pubkey"]; ok {
-		decoded, err := base64.StdEncoding.DecodeString(val.(string))
-		parsedPubKey, err := x509.ParsePKCS1PublicKey(decoded) // extract the public key, needed x509 to obtain from []byte
-		chk(err)
-		state.srvPubKey = parsedPubKey
-	} else { // TO
-		fmt.Println("Error: could not get the server's public key, possible Server Error")
-		os.Exit(0)
-	}
+	obtainPubKey(client)
 
 	//  Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte(passScan))
@@ -179,10 +182,10 @@ func Login() {
 
 	// Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte(passScan))
-	keyLogin := keyClient[:32]  // One half for the login (256bits)
-	keyData := keyClient[32:64] // The other half for the data (256bits)
+	keyLogin := keyClient[:32] // One half for the login (256bits)
+	//keyData := keyClient[32:64] // The other half for the data (256bits)
 
-	// Generate a pair of keys (private, public) for the server
+	// Generate a pair of keys (private, public)
 	/* pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
 	chk(err)
 	pkClient.Precompute() // Accelerate its use with a pre-calculation
@@ -194,40 +197,51 @@ func Login() {
 	pubJSON, err := json.Marshal(&keyPub) // Encode with JSON
 	chk(err) */
 
-	// Set request data
-	data := url.Values{}
-	data.Set("cmd", "login")                                                                                     // command
-	data.Set("user", utils.Encode64(utils.Encrypt(utils.Compress([]byte(userScan)), keyData)))                   // username
-	data.Set("pass", utils.Encode64(utils.Encrypt(utils.Compress(keyLogin), keyData)))                           // password
-	//data.Set("token", utils.Encode64(utils.Compress([]byte(utils.GenerateTokenId(userScan, string(keyLogin)))))) // ID Token // TO-DO(Javi): change this
+	// Obtain public key of the server in case is not available
+	if state.srvPubKey == nil {
+		obtainPubKey(client)
+	}
+
+	// Generate random key to encrypt the data with AES
+	key := make([]byte, 32)
+	rand.Read(key)
+	// Generate random session token
 	sessionToken := make([]byte, 16)
 	rand.Read(sessionToken)
-	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.Compress([]byte(sessionToken)), keyData)))                         // Session token
-	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), keyData))) // Last seen
-	r, err := client.PostForm("https://localhost:10443", data)                                                                      // POST request
+
+	// Set request data
+	data := url.Values{}
+	data.Set("cmd", "login")                                                                                                    // command
+	data.Set("user", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key)))                                    // username
+	data.Set("pass", utils.Encode64(utils.Encrypt(utils.HashSHA512(keyLogin), key)))                                            // password
+	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(sessionToken)), key)))                       // Session token
+	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), key))) // Last seen
+	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))                                 // AES Key
+
+	// POST request
+	r, err := client.PostForm("https://localhost:10443", data)
 	chk(err)
 
 	// Obtain response from server
 	resp := server.Resp{}
 	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+	fmt.Println("\n" + resp.Msg + " " + userScan + "." + "\n")
 
 	// Check login information
-	if !resp.Ok {
+	/* if !resp.Ok {
 		fmt.Println("\n" + resp.Msg + "\n")
 	} else {
 		retrieved_password := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data["Password"].(string)), keyData))
 		salt := utils.Decode64(resp.Data["Salt"].(string))
 		hashed_password := utils.Argon2Key(keyLogin, salt)
 		if bytes.Equal(hashed_password, retrieved_password) {
-			fmt.Println("\nBienvenido " + userScan + "\n")
+			fmt.Println("\nLogin correcto. Bienvenido " + userScan + "\n")
 		} else {
 			fmt.Println("\nCredenciales incorrectas para el usuario " + userScan + "\n")
 		}
-	}
+	} */
 	// Finish request
 	r.Body.Close()
-
-	// TODO check login correct
 }
 
 // Run manages the client

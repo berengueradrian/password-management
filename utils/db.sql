@@ -1,5 +1,5 @@
 create database passmanager;
-
+use passmanager;
 -- users table where the login in the password management app is stored
 create table users
 (
