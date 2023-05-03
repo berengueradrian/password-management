@@ -42,7 +42,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 			case "-server", "-s", "-srv":
-				fmt.Println("Running the server...")
+				fmt.Println("- Starting the server on port 10443...")
 				server.Run()
 			default:
 				fmt.Println("Uknown command '", os.Args[1], "'.\n")
