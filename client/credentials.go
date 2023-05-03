@@ -82,9 +82,9 @@ func CreateCredential() {
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
 	rand.Read(key)
-	// Generate random credential id
-	cred_id := make([]byte, 32) //TODO: Random identifier for credentials?
-	rand.Read(cred_id)
+
+	// Construct credential identifier
+	cred_id := utils.HashSHA512([]byte(alias + string(state.user_id)))
 
 	// Set request values
 	data := url.Values{}
