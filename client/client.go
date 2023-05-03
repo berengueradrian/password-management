@@ -20,7 +20,10 @@ import (
 	"os"
 	"password-management/server"
 	"password-management/utils"
+	"strconv"
 	"time"
+
+	"github.com/sethvargo/go-password/password"
 )
 
 // Context of the client to maintain the state between requests
@@ -67,22 +70,25 @@ func Register() {
 
 	// Initial prompt for register form
 	os.Stdout.WriteString("-- Register --\n")
-	os.Stdout.WriteString("- User name: ")
+	os.Stdout.WriteString("- Username: ")
 	// Read username input
 	fmt.Scan(&userScan)
 	os.Stdout.WriteString("\n")
-	os.Stdout.WriteString("- Do you want to create your own password?(if not, a random one will be generated) (y/n)\n")
+	os.Stdout.WriteString("- Do you want a randomly generated password? (y/n)\n")
 	os.Stdout.WriteString("> ")
 	fmt.Scan(&createOwn)
 
 	// If the user types y or Y, he will be asked to create his own password
 	if createOwn == "y" || createOwn == "Y" {
+		passScan = randomPasswordGenerator() // TO-DO: generate a random password and print it correctly and doing the corresponding prompts
+	} else { // If the user types n or another character, a random password will be generated
 		// Loop until the user types two equal passwords
 		for {
 			os.Stdout.WriteString("- Password for " + userScan + ": ")
 			fmt.Scan(&passScan)
 			os.Stdout.WriteString("- Repeat the password: ")
 			fmt.Scan(&passScan2)
+			fmt.Println()
 			// Check if the passwords match
 			if passScan != passScan2 {
 				os.Stdout.WriteString("*Error: Passwords do not match, try again\n")
@@ -90,9 +96,6 @@ func Register() {
 				break
 			}
 		}
-	} else { // If the user types n or another character, a random password will be generated
-		randomPasswordGenerator(passScan) // TO-DO: generate a random password and print it correctly and doing the corresponding prompts
-		os.Stdout.WriteString("- Your randomly generated password is: '" + passScan + "' (copy and save it in a safe place)\n")
 	}
 
 	// We create a special client that does not check the validity of the certificates
@@ -155,11 +158,68 @@ func Register() {
 }
 
 // randomPasswordGenerator generates a random password based on entered parameters by the user
-func randomPasswordGenerator(passScan string) {
+func randomPasswordGenerator() string {
+	length, numDigits, numSymbols, noUpper, allowRepeat := 16, 4, 2, true, false
+	lengthScan, symbolScan, upperScan, repeatScan, passRepeat, pass := "", "", "", "", "", ""
 
-	// TO-DO Check the algorithm
-	// but we have to ask the user for length complexity and gruops of characters at least
+	// Password length and number of digits will be half the half of the length
+	for {
+		os.Stdout.WriteString("- Password length or d for default (16), minimum 8: \n")
+		os.Stdout.WriteString("> ")
+		fmt.Scan(&lengthScan)
+		if lengthScan != "d" { // not default value
+			lengthConv, err := strconv.Atoi(lengthScan)
+			if err != nil {
+				os.Stdout.WriteString("*Error: the length must be a number or d for default \n")
+			} else {
+				if lengthConv < 8 {
+					os.Stdout.WriteString("*Error: the length must be greater or equal than 8 \n")
+				} else {
+					length = lengthConv
+					numDigits = lengthConv / 4 // digits = 4th of the length
+					break
+				}
+			}
+		} else {
+			break
+		}
+	}
+	// Symbols
+	os.Stdout.WriteString("- Do you want to include symbols? (y/n): ")
+	fmt.Scan(&symbolScan)
+	if symbolScan == "y" || symbolScan == "Y" {
+		numSymbols = length / 4 // symbols = 4th of the length
+	} else {
+		numSymbols = 0
+	}
+	// Uppercase
+	os.Stdout.WriteString("- Do you want to include Uppercase letters? (y/n): ")
+	fmt.Scan(&upperScan)
+	if upperScan == "y" || upperScan == "Y" {
+		noUpper = false
+	}
+	// Repeated chars
+	os.Stdout.WriteString("- Do you want to allow repeated characters? (y/n): ")
+	fmt.Scan(&repeatScan)
+	if repeatScan == "y" || repeatScan == "Y" {
+		allowRepeat = true
+	}
 
+	// Generate passwords until the user decides not to
+	for {
+		// Generate the password
+		passwordGenerated, err := password.Generate(length, numDigits, numSymbols, noUpper, allowRepeat)
+		chk(err)
+		pass = passwordGenerated
+		os.Stdout.WriteString("- Your randomly generated password is: '" + pass + "' (copy it and save it for next logins) \n")
+		os.Stdout.WriteString("- Do you want to generate another one? (y/n): ")
+		fmt.Scan(&passRepeat)
+		if passRepeat != "y" {
+			break
+		}
+	}
+
+	return pass
 }
 
 // User's login in the password management system
