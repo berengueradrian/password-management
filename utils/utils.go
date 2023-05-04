@@ -18,6 +18,8 @@ import (
 	"io"
 	"os"
 
+	"time"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/argon2"
@@ -128,12 +130,14 @@ func EncryptRSA(message []byte, publicKey *rsa.PublicKey) []byte {
 	return ciphertext
 }
 
+// Function to sign a message using PSS
 func SignRSA(message []byte, privateKey *rsa.PrivateKey) []byte {
 	ciphertext, err := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA512, message, nil)
 	chk(err) // check for errors
 	return ciphertext
 }
 
+// Function to verify the signature of a message using PSS
 func VerifyRSA(digest []byte, sign []byte, publicKey *rsa.PublicKey) bool {
 	err := rsa.VerifyPSS(publicKey, crypto.SHA512, digest, sign, nil)
 	chk(err) // check for errors
@@ -145,4 +149,11 @@ func DecryptRSA(ciphertext []byte, privateKey *rsa.PrivateKey) []byte {
 	plaintext, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, privateKey, ciphertext, nil)
 	chk(err) // check for errors
 	return plaintext
+}
+
+// Function to obtain current time in format yyyy-mm-dd
+func GetTime() string {
+	now := time.Now()
+	timestamp := now.Format("2006-01-02")
+	return timestamp
 }

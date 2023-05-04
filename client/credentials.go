@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"password-management/server"
 	"password-management/utils"
-	"time"
 )
 
 func showCredential(cred server.Credential) {
@@ -41,9 +40,7 @@ func ListAllCredentials() {
 	aeskey := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
 
 	// Digital signature
-	now := time.Now()
-	timestamp := now.Format("2006-01-02")
-	digest := utils.HashSHA512([]byte("getAllCred" + user_id + pubkey + aeskey + timestamp))
+	digest := utils.HashSHA512([]byte("getAllCred" + user_id + pubkey + aeskey + utils.GetTime()))
 	sign := utils.SignRSA(digest, state.privKey)
 
 	// Set request data

@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"password-management/utils"
-	"time"
 )
 
 // Context of the server to maintain the state between requests
@@ -126,9 +125,7 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(err)
 
 	// Verify signature
-	now := time.Now()
-	timestamp := now.Format("2006-01-02")
-	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("user_id") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + timestamp))
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("user_id") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	// Get request data
