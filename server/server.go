@@ -103,9 +103,9 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	chk(_error)
 
 	// Verify signature
-	digest := utils.HashSHA512([]byte(req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
 		req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
-		req.Form.Get("password") + utils.GetTime()))
+		req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	// Get credential information
@@ -182,6 +182,23 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	db := utils.ConnectDB()
 	defer db.Close()
 
+	// Get AES Key to decrypt user data
+	keycom := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskeycom")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), keycom))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), keycom))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("newAlias") + req.Form.Get("newSite") +
+		req.Form.Get("newUsername") + req.Form.Get("aes_key") + req.Form.Get("aeskeycom") +
+		req.Form.Get("cred_id") + req.Form.Get("newId") + req.Form.Get("pubkey") +
+		req.Form.Get("newPassword") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
 	// Get credential information
 	c := Credential{}
 	c.Alias = req.Form.Get("newAlias")
@@ -189,8 +206,8 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	c.Username = req.Form.Get("newUsername")
 	c.Password = req.Form.Get("newPassword")
 	c.Key = req.Form.Get("aes_key")
-	cred_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("cred_id")), state.privKey))
-	newId := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("newId")), state.privKey))
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+	newId := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("newId")), keycom))
 
 	// Search credential id
 	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)

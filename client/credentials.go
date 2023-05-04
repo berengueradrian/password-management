@@ -124,7 +124,7 @@ func CreateCredential() {
 	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
 
 	// Digital signature
-	digest := utils.HashSHA512([]byte(alias_c + site_c + username_c + aeskey_c + cred_id_c + user_id_c + password_c + utils.GetTime()))
+	digest := utils.HashSHA512([]byte("postCred" + alias_c + site_c + username_c + aeskey_c + cred_id_c + user_id_c + password_c + pubkey_c + utils.GetTime()))
 	sign := utils.SignRSA(digest, state.privKey)
 
 	// Set request values
@@ -181,17 +181,42 @@ func ModifyCredential() {
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
 	rand.Read(key)
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+
+	// Prepare data
+	newAlias_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newAlias)), state.kData))
+	newSite_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newSite)), state.kData))
+	newUsername_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newUsername)), state.kData))
+	aeskey_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData))
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+	cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(cred_id), keycom))
+	newId_c := utils.Encode64(utils.Encrypt(utils.Compress(newId), keycom))
+	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+	newPassword_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newPassword)), key))
+
+	// Digital signature
+	digest := utils.HashSHA512([]byte("putCred" + newAlias_c + newSite_c +
+		newUsername_c + aeskey_c + keycom_c + cred_id_c + newId_c + pubkey_c +
+		newPassword_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
 
 	// Set request values
 	data := url.Values{}
 	data.Set("cmd", "putCred")
-	data.Set("newAlias", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newAlias)), state.kData)))
-	data.Set("newSite", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newSite)), state.kData)))
-	data.Set("newUsername", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newUsername)), state.kData)))
-	data.Set("aes_key", utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData)))
-	data.Set("cred_id", utils.Encode64(utils.EncryptRSA(utils.Compress(cred_id), state.srvPubKey)))
-	data.Set("newId", utils.Encode64(utils.EncryptRSA(utils.Compress(newId), state.srvPubKey)))
-	data.Set("newPassword", utils.Encode64(utils.Encrypt(utils.Compress([]byte(newPassword)), key)))
+	data.Set("newAlias", newAlias_c)
+	data.Set("newSite", newSite_c)
+	data.Set("newUsername", newUsername_c)
+	data.Set("aes_key", aeskey_c)
+	data.Set("aeskeycom", keycom_c)
+	data.Set("cred_id", cred_id_c)
+	data.Set("newId", newId_c)
+	data.Set("newPassword", newPassword_c)
+	data.Set("pubkey", pubkey_c)
+	data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom)))
 
 	// POST request
 	r, err := state.client.PostForm("https://localhost:10443", data)
