@@ -228,14 +228,29 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 	db := utils.ConnectDB()
 	defer db.Close()
 
+	// Get AES Key to decrypt user data
+	keycom := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskeycom")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), keycom))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), keycom))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("cred_id") +
+		req.Form.Get("pubkey") + req.Form.Get("aeskeycom") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
 	// Get credential information
-	cred_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("cred_id")), state.privKey))
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
 
 	// Search credential id
 	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
 	chk(errs)
 	if !result.Next() {
-		response(w, false, "Credential not found", nil)
+		response(w, false, "Credencial no encontrada", nil)
 	}
 
 	// Delete credential
@@ -243,6 +258,9 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(err)
 	_, errr := db.Query("DELETE FROM users_data WHERE id=?", cred_id)
 	chk(errr)
+
+	// Response
+	response(w, true, "Credencial eliminada", nil)
 }
 
 // Handle the requests

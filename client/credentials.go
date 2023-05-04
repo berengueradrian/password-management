@@ -245,10 +245,29 @@ func DeleteCredential() {
 	// Get credential id
 	cred_id := utils.HashSHA512([]byte(alias + string(state.user_id)))
 
+	// Generate random key to encrypt the data with AES
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+
+	// Prepare data
+	cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(cred_id), keycom))
+	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+
+	// Digital signature
+	digest := utils.HashSHA512([]byte("deleteCred" + cred_id_c + pubkey_c + keycom_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+
 	// Set request values
 	data := url.Values{}
 	data.Set("cmd", "deleteCred")
-	data.Set("cred_id", utils.Encode64(utils.EncryptRSA(utils.Compress(cred_id), state.srvPubKey)))
+	data.Set("cred_id", cred_id_c)
+	data.Set("pubkey", pubkey_c)
+	data.Set("aeskeycom", keycom_c)
+	data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom)))
 
 	// POST request
 	r, err := state.client.PostForm("https://localhost:10443", data)
