@@ -92,6 +92,22 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	db := utils.ConnectDB()
 	defer db.Close()
 
+	// Get AES Key to decrypt user data
+	keycom := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskeycom")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), keycom))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), keycom))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
+		req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
+		req.Form.Get("password") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
 	// Get credential information
 	c := Credential{}
 	c.Alias = req.Form.Get("alias")
@@ -99,14 +115,17 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	c.Username = req.Form.Get("username")
 	c.Password = req.Form.Get("password")
 	c.Key = req.Form.Get("aes_key")
-	cred_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("cred_id")), state.privKey))
-	cred_user_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("user_id")), state.privKey))
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+	cred_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), keycom))
 
 	// Insert information
 	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?)", cred_id, utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias))
 	chk(err)
 	_, errr := db.Query("INSERT INTO credentials values (?,?)", cred_id, utils.Decode64(c.Password))
 	chk(errr)
+
+	// Response
+	response(w, true, "Crendencial creada con exito", nil)
 }
 
 func getAllCredentials(w http.ResponseWriter, req *http.Request) {
