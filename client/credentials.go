@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"password-management/server"
 	"password-management/utils"
+	"time"
 )
 
 func showCredential(cred server.Credential) {
@@ -27,10 +28,31 @@ func showCredential(cred server.Credential) {
 
 func ListAllCredentials() {
 
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+
+	// Generate random key to encrypt the data with AES
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Prepare data
+	user_id := utils.Encode64(utils.Encrypt(utils.Compress([]byte(state.user_id)), key))
+	pubkey := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key))
+	aeskey := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+
+	// Digital signature
+	now := time.Now()
+	timestamp := now.Format("2006-01-02")
+	digest := utils.HashSHA512([]byte("getAllCred" + user_id + pubkey + aeskey + timestamp))
+	sign := utils.SignRSA(digest, state.privKey)
+
 	// Set request data
 	data := url.Values{}
 	data.Set("cmd", "getAllCred")
-	data.Set("user_id", utils.Encode64(utils.EncryptRSA(utils.Compress([]byte(state.user_id)), state.srvPubKey)))
+	data.Set("user_id", user_id)
+	data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), key)))
+	data.Set("pubkey", pubkey)
+	data.Set("aes_key", aeskey)
 
 	// POST request
 	r, err := state.client.PostForm("https://localhost:10443", data)
@@ -43,8 +65,6 @@ func ListAllCredentials() {
 	// Adapt credentials type
 	var creds []server.Credential
 	cred := server.Credential{}
-
-	// Continue adapt credentials type
 	for _, c := range resp.Data["credentials"].([]interface{}) {
 		aux := c.(map[string]interface{})
 		cred.Alias = aux["Alias"].(string)

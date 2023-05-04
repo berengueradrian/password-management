@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"password-management/utils"
+	"time"
 )
 
 // Context of the server to maintain the state between requests
@@ -114,8 +115,24 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 	db := utils.ConnectDB()
 	defer db.Close()
 
+	// Get AES Key
+	aeskey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aeskey))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aeskey))
+	err := json.Unmarshal(pubkey, &public_key)
+	chk(err)
+
+	// Verify signature
+	now := time.Now()
+	timestamp := now.Format("2006-01-02")
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("user_id") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + timestamp))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
 	// Get request data
-	user_id := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("user_id")), state.privKey))
+	user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), aeskey))
 
 	// Get list of credentials
 	result, err := db.Query(`SELECT alias, site, username, aes_key, password
@@ -253,9 +270,6 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 	case "login":
 
-		// Aux variable for the response
-		var aux map[string]interface{}
-
 		// Decypher AES Key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
 
@@ -269,24 +283,27 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		// Return database information
 		db := utils.ConnectDB()
 		defer db.Close()
-		result, err := db.Query("SELECT password,session_token,salt FROM users where username = ?", u.Name)
+		result, err := db.Query("SELECT password,session_token,salt,private_key FROM users where username = ?", u.Name)
 		if err != nil {
-			var aux map[string]interface{}
-			response(w, false, "Error inesperado", aux)
+			response(w, false, "Error inesperado", nil)
 			return
 		}
 
 		// Check if any user has been matched
+		var data map[string]interface{}
 		if result.Next() {
 			// Obtain login information
-			var password, session_token, salt []byte
+			var password, session_token, salt, private_key []byte
 			var loginMsg string
-			err = result.Scan(&password, &session_token, &salt)
+			err = result.Scan(&password, &session_token, &salt, &private_key)
 			chk(err)
 
 			// Check login information
 			providedPass := utils.Argon2Key(u.Password, salt)
 			if bytes.Equal(providedPass, password) {
+				data = map[string]interface{}{
+					"privkey": utils.Encode64(private_key),
+				}
 				loginMsg = "Login correcto. Bienvenido"
 			} else {
 				loginMsg = "Login fallido. Credenciales incorrectas para el usuario"
@@ -295,15 +312,15 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			// Update session_token and last_seen fields
 			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where username=?", u.SessionToken, u.Seen, u.Name)
 			if err != nil {
-				response(w, false, "Error inesperado", aux)
+				response(w, false, "Error inesperado", nil)
 				return
 			}
 
 			// Send response
-			response(w, true, loginMsg, aux)
+			response(w, true, loginMsg, data)
 			return
 		} else {
-			response(w, false, "Usuario inexistente", aux)
+			response(w, false, "Usuario inexistente", data)
 			return
 		}
 	case "postCred":

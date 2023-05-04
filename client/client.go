@@ -277,6 +277,17 @@ func Login() {
 	// Obtain response from server
 	resp := server.Resp{}
 	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Save private key
+	if resp.Ok {
+		pkJSON := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data["privkey"].(string)), keyData))
+		var private_key *rsa.PrivateKey
+		errr := json.Unmarshal(pkJSON, &private_key)
+		chk(errr)
+		state.privKey = private_key
+	}
+
+	// Show response
 	fmt.Println("\n" + resp.Msg + " " + userScan + "." + "\n")
 
 	// Finish request
