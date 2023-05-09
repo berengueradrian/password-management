@@ -10,13 +10,23 @@ import (
 	"path/filepath"
 	"strings"
 	"os"
+	"io"
+	"bytes"
 )
+
+type File struct {
+	Name string
+	Contents string
+}
 
 func showCredential(cred server.Credential) {
 	// Decypher information
 	cred.Alias = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
 	cred.Site = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Site), state.kData)))
 	cred.Username = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Username), state.kData)))
+	if cred.Filename != "" {
+		cred.Filename = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Filename), state.kData)))
+	}
 	cred.Key = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Key), state.kData)))
 	cred.Password = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Password), []byte(cred.Key))))
 
@@ -25,11 +35,14 @@ func showCredential(cred server.Credential) {
 	fmt.Println("  Site: " + cred.Site)
 	fmt.Println("  Username: " + cred.Username)
 	fmt.Println("  Password: " + cred.Password)
+	if cred.Filename != "" {
+		fmt.Println("  Filename: " + cred.Filename)
+	}
 	fmt.Println()
 }
 
 func ListAllCredentials() {
-
+	anyFile := false
 	// Obtain public key of client from private key
 	pkJson, err := json.Marshal(state.privKey.PublicKey)
 
@@ -65,6 +78,7 @@ func ListAllCredentials() {
 	// Adapt credentials type
 	var creds []server.Credential
 	cred := server.Credential{}
+	files := make(map[string]File)
 	for _, c := range resp.Data["credentials"].([]interface{}) {
 		aux := c.(map[string]interface{})
 		cred.Alias = aux["Alias"].(string)
@@ -72,7 +86,16 @@ func ListAllCredentials() {
 		cred.Username = aux["Username"].(string)
 		cred.Password = aux["Password"].(string)
 		cred.Key = aux["Key"].(string)
-
+		cred.Filename = aux["Filename"].(string)
+		if cred.Filename != "" {
+			anyFile = true
+			mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
+			files[mapAlias] = File{
+				Name: cred.Filename,
+				Contents: aux["FileContents"].(string),
+			}
+		}
+		//cred.FileContents = aux["FileContents"].(string)
 		creds = append(creds, cred)
 	}
 
@@ -81,12 +104,39 @@ func ListAllCredentials() {
 	for _, c := range creds {
 		showCredential(c)
 	}
+	if anyFile {
+		download := ""
+		fmt.Print("- Do you want to download any file? (y/n): ")
+		fmt.Scan(&download)
+		if download == "y" {
+			alias := ""
+			fmt.Print("- Enter the credential alias of the file to downlaod: ")
+			fmt.Scan(&alias)
+			file := files[alias]
+			fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
+			fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
+			DownloadFile(fileName, fileContents)
+			fmt.Println("- File downloaded \n")
+		}
+	}
 
 	// Finish request
 	r.Body.Close()
 
 	// Enter to the user menu
 	UserMenu()
+}
+
+// Downloads a file in the current directory of the user
+func DownloadFile(filename string, fileContents []byte) {
+	currentDir, err := os.Getwd()
+	chk(err)
+    f, err := os.Create(currentDir + "/" + filename)
+    chk(err)
+    defer f.Close()
+
+    _, err = io.Copy(f, bytes.NewReader(fileContents))
+    chk(err)
 }
 
 func CreateCredential() {

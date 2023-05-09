@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"password-management/utils"
+	//"fmt"
 )
 
 // Context of the server to maintain the state between requests
@@ -129,7 +130,7 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	chk(errr)
 
 	// Response
-	response(w, true, "Crendencial creada con exito", nil)
+	response(w, true, "Crendential created", nil)
 }
 
 func getAllCredentials(w http.ResponseWriter, req *http.Request) {
@@ -155,7 +156,7 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 	user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), aeskey))
 
 	// Get list of credentials
-	result, err := db.Query(`SELECT alias, site, username, aes_key, password
+	result, err := db.Query(`SELECT alias, site, username, aes_key, password, filename, filecontents
 														FROM users_data, credentials
 														WHERE user_id=? and users_data.id=credentials.users_data_id`,
 		user_id)
@@ -163,14 +164,16 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 
 	var creds []Credential
 	c := Credential{}
-	var alias, site, username, key, password []byte
+	var alias, site, username, key, password, filename, filecontents []byte
 	for result.Next() {
-		result.Scan(&alias, &site, &username, &key, &password)
+		result.Scan(&alias, &site, &username, &key, &password, &filename, &filecontents)
 		c.Alias = utils.Encode64(alias)
 		c.Site = utils.Encode64(site)
 		c.Username = utils.Encode64(username)
 		c.Key = utils.Encode64(key)
 		c.Password = utils.Encode64(password)
+		c.Filename = utils.Encode64(filename)
+		c.FileContents = utils.Encode64(filecontents)
 		creds = append(creds, c)
 	}
 
@@ -178,7 +181,7 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 	data := map[string]interface{}{
 		"credentials": creds,
 	}
-	response(w, true, "Crendenciales recuperadas con exito", data)
+	response(w, true, "Credentials retrieved", data)
 }
 
 func modifyCredentials(w http.ResponseWriter, req *http.Request) {
@@ -254,7 +257,7 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
 	chk(errs)
 	if !result.Next() {
-		response(w, false, "Credencial no encontrada", nil)
+		response(w, false, "Credential not found", nil)
 	}
 
 	// Delete credential
@@ -264,7 +267,7 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(errr)
 
 	// Response
-	response(w, true, "Credencial eliminada", nil)
+	response(w, true, "Credential deleted", nil)
 }
 
 // Handle the requests
@@ -321,7 +324,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		data := map[string]interface{}{
 			"username": u.Name,
 		}
-		response(w, true, "Usuario registrado", data)
+		response(w, true, "User registered", data)
 
 	case "login":
 
@@ -340,7 +343,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		defer db.Close()
 		result, err := db.Query("SELECT password,session_token,salt,private_key FROM users where username = ?", u.Name)
 		if err != nil {
-			response(w, false, "Error inesperado", nil)
+			response(w, false, "Unexpected error", nil)
 			return
 		}
 
@@ -367,7 +370,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			// Update session_token and last_seen fields
 			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where username=?", u.SessionToken, u.Seen, u.Name)
 			if err != nil {
-				response(w, false, "Error inesperado", nil)
+				response(w, false, "Unexpected error", nil)
 				return
 			}
 
@@ -375,7 +378,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			response(w, true, loginMsg, data)
 			return
 		} else {
-			response(w, false, "Usuario inexistente", data)
+			response(w, false, "User non existent", data)
 			return
 		}
 	case "postCred":
@@ -389,15 +392,15 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {
-			response(w, false, "No autentificado", nil)
+			response(w, false, "Not authenticated", nil)
 			return
 		} else if u.Name == nil /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
 			// sin token o con token expirado
-			response(w, false, "No autentificado", nil)
+			response(w, false, "Not authenticated", nil)
 			return
 		} else if !bytes.EqualFold(u.Name, utils.Decode64(req.Form.Get("username"))) {
 			// username no coincide
-			response(w, false, "No autentificado", nil)
+			response(w, false, "Not authenticated", nil)
 			return
 		}
 
@@ -411,7 +414,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		response(w, true, string(datos), data)
 
 	default:
-		response(w, false, "Comando no implementado", nil)
+		response(w, false, "Command not valid", nil)
 	}
 
 }
