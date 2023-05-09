@@ -7,6 +7,9 @@ import (
 	"net/url"
 	"password-management/server"
 	"password-management/utils"
+	"path/filepath"
+	"strings"
+	"os"
 )
 
 func showCredential(cred server.Credential) {
@@ -87,7 +90,8 @@ func ListAllCredentials() {
 }
 
 func CreateCredential() {
-	var site, alias, username, password string
+	var site, alias, username, password, path, filename, extension, addFile string
+	var fileContents []byte
 
 	// Collect user data
 	fmt.Print("-- Create a credential --\n")
@@ -99,6 +103,25 @@ func CreateCredential() {
 	fmt.Scan(&username)
 	fmt.Print("- Password: ")
 	fmt.Scan(&password)
+	fmt.Print("- Do you want to add a file? (y/n): ")
+	fmt.Scan(&addFile)
+	if addFile == "y" {
+		for { // read the file path while it is in a allowed extension
+			fmt.Print("- File (introduce the path): ")
+			fmt.Scan(&path)
+			filename = filepath.Base(path) // extract file name for saving it as it is
+			extension = strings.TrimPrefix(filepath.Ext(filename), ".") // extract extension to check its validity
+			if extension != "txt" || extension != "der" || extension != "key" || extension != "crt" || extension != "json"  || extension != "yaml" || extension != "pem" || extension != "p12" || extension != "pfx" || extension != "ini" {
+				fmt.Println("*Error: Invalid file extension")
+				fmt.Println("*File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
+			} else {
+				break
+			}
+		}
+		// Read the contents of the file
+		fileContents = readFile(path)
+	}
+
 
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
@@ -116,6 +139,11 @@ func CreateCredential() {
 	alias_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(alias)), state.kData))
 	site_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(site)), state.kData))
 	username_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(username)), state.kData))
+	var fileContents_c, filename_c string
+	if addFile == "y" {	
+		filename_c = utils.Encode64(utils.Encrypt(utils.Compress([]byte(filename)), state.kData))
+		fileContents_c = utils.Encode64(utils.Encrypt(utils.Compress(fileContents), state.kData))
+	}
 	aeskey_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData))
 	cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(cred_id), keycom))
 	user_id_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(state.user_id)), keycom))
@@ -132,6 +160,10 @@ func CreateCredential() {
 	data.Set("cmd", "postCred")
 	data.Set("alias", alias_c)
 	data.Set("site", site_c)
+	if addFile == "y" {
+		data.Set("filename", filename_c)
+		data.Set("filecontents", fileContents_c)
+	}
 	data.Set("username", username_c)
 	data.Set("aes_key", aeskey_c)
 	data.Set("cred_id", cred_id_c)
@@ -283,4 +315,21 @@ func DeleteCredential() {
 
 	// Enter to the user menu
 	UserMenu()
+}
+
+func readFile(path string) []byte {
+    file, err := os.Open(path)
+	chk(err)
+    defer file.Close()
+
+    fileInfo, err := file.Stat()
+    chk(err)
+
+    fileSize := fileInfo.Size()
+    buffer := make([]byte, fileSize)
+
+    _, err = file.Read(buffer)
+    chk(err)
+
+    return buffer
 }

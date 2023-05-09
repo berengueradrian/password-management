@@ -17,9 +17,7 @@ import (
 	"encoding/base64"
 	"io"
 	"os"
-
 	"time"
-
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/argon2"

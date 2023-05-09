@@ -36,6 +36,8 @@ type Credential struct {
 	Alias    string
 	Site     string
 	Username string
+	Filename string
+	FileContents string
 	Password string
 	Key      string
 }
@@ -113,6 +115,8 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	c.Alias = req.Form.Get("alias")
 	c.Site = req.Form.Get("site")
 	c.Username = req.Form.Get("username")
+	c.Filename = req.Form.Get("filename")
+	c.FileContents = req.Form.Get("filecontents")
 	c.Password = req.Form.Get("password")
 	c.Key = req.Form.Get("aes_key")
 	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
@@ -121,7 +125,7 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	// Insert information
 	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?)", cred_id, utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias))
 	chk(err)
-	_, errr := db.Query("INSERT INTO credentials values (?,?)", cred_id, utils.Decode64(c.Password))
+	_, errr := db.Query("INSERT INTO credentials values (?,?,?,?)", cred_id, utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents))
 	chk(errr)
 
 	// Response
