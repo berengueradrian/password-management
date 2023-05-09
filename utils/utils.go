@@ -1,24 +1,28 @@
 /*
-	Common functions and utilities
+Common functions and utilities
 */
 package utils
 
 import (
 	"bytes"
 	"compress/zlib"
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/base64"
-	"io"
-	"database/sql"
-    _ "github.com/go-sql-driver/mysql"
-	"github.com/joho/godotenv"
-	"os"
-	"crypto/sha512"
-	"golang.org/x/crypto/argon2"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
+	"database/sql"
+	"encoding/base64"
+	"io"
+	"os"
+
+	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/joho/godotenv"
+	"golang.org/x/crypto/argon2"
 )
 
 // chk checks and exits if there are errors (saves writing in simple programs)
@@ -86,7 +90,7 @@ func Decode64(s string) []byte {
 func ConnectDB() *sql.DB {
 	// Load .env file
 	err := godotenv.Load()
-    chk(err) // check for errors
+	chk(err) // check for errors
 
 	dbConnection := os.Getenv("DB_CONNECTION")
 	dbHost := os.Getenv("DB_HOST")
@@ -96,7 +100,7 @@ func ConnectDB() *sql.DB {
 	dbPassword := os.Getenv("DB_PASSWORD")
 
 	// Open database connection
-	db, err := sql.Open(dbConnection, dbUsername + ":" + dbPassword + "@tcp("+ dbHost + ":" + dbPort + ")/" + dbDatabase)
+	db, err := sql.Open(dbConnection, dbUsername+":"+dbPassword+"@tcp("+dbHost+":"+dbPort+")/"+dbDatabase)
 	chk(err) // check for errors
 
 	return db
@@ -109,7 +113,7 @@ func HashSHA512(s []byte) []byte {
 }
 
 // Function to hash the password with argon2
-func Argon2Key(password []byte, salt []byte) []byte{ // TO-DO: move to utils and generateToken also
+func Argon2Key(password []byte, salt []byte) []byte { // TO-DO: move to utils and generateToken also
 	var time uint32 = 1 // TO-DO: ask if these metrics are correct
 	var memory uint32 = 64 * 1024
 	var threads uint8 = 4
@@ -126,9 +130,30 @@ func EncryptRSA(message []byte, publicKey *rsa.PublicKey) []byte {
 	return ciphertext
 }
 
+// Function to sign a message using PSS
+func SignRSA(message []byte, privateKey *rsa.PrivateKey) []byte {
+	ciphertext, err := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA512, message, nil)
+	chk(err) // check for errors
+	return ciphertext
+}
+
+// Function to verify the signature of a message using PSS
+func VerifyRSA(digest []byte, sign []byte, publicKey *rsa.PublicKey) bool {
+	err := rsa.VerifyPSS(publicKey, crypto.SHA512, digest, sign, nil)
+	chk(err) // check for errors
+	return true
+}
+
 // Function to decrypt a message with RSA OAEP
 func DecryptRSA(ciphertext []byte, privateKey *rsa.PrivateKey) []byte {
 	plaintext, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, privateKey, ciphertext, nil)
 	chk(err) // check for errors
 	return plaintext
+}
+
+// Function to obtain current time in format yyyy-mm-dd
+func GetTime() string {
+	now := time.Now()
+	timestamp := now.Format("2006-01-02")
+	return timestamp
 }

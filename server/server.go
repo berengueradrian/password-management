@@ -30,6 +30,16 @@ type user struct {
 	Data         map[string]interface{} // datos adicionales del usuario
 }
 
+// Credentials has also id and user_id fields
+// We don't need it for the response so we don't add it to the struct
+type Credential struct {
+	Alias    string
+	Site     string
+	Username string
+	Password string
+	Key      string
+}
+
 // Server's response
 // (begins with uppercase since it is used in the client too)
 // (the variables begin with uppercase to be considered in the encoding)
@@ -75,6 +85,182 @@ func Run() {
 	// localhost.key is the private key used to decrypt the data sent between client and server
 	// fourth argument is the server handler, if nil, the http.DefaultServeMux is used (it is a router that maps URLs to functions)
 	chk(http.ListenAndServeTLS(":10443", "localhost.crt", "localhost.key", nil))
+}
+
+func createCredential(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key to decrypt user data
+	keycom := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskeycom")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), keycom))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), keycom))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
+		req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
+		req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get credential information
+	c := Credential{}
+	c.Alias = req.Form.Get("alias")
+	c.Site = req.Form.Get("site")
+	c.Username = req.Form.Get("username")
+	c.Password = req.Form.Get("password")
+	c.Key = req.Form.Get("aes_key")
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+	cred_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), keycom))
+
+	// Insert information
+	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?)", cred_id, utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias))
+	chk(err)
+	_, errr := db.Query("INSERT INTO credentials values (?,?)", cred_id, utils.Decode64(c.Password))
+	chk(errr)
+
+	// Response
+	response(w, true, "Crendencial creada con exito", nil)
+}
+
+func getAllCredentials(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key
+	aeskey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aeskey))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aeskey))
+	err := json.Unmarshal(pubkey, &public_key)
+	chk(err)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("user_id") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get request data
+	user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), aeskey))
+
+	// Get list of credentials
+	result, err := db.Query(`SELECT alias, site, username, aes_key, password
+														FROM users_data, credentials
+														WHERE user_id=? and users_data.id=credentials.users_data_id`,
+		user_id)
+	chk(err)
+
+	var creds []Credential
+	c := Credential{}
+	var alias, site, username, key, password []byte
+	for result.Next() {
+		result.Scan(&alias, &site, &username, &key, &password)
+		c.Alias = utils.Encode64(alias)
+		c.Site = utils.Encode64(site)
+		c.Username = utils.Encode64(username)
+		c.Key = utils.Encode64(key)
+		c.Password = utils.Encode64(password)
+		creds = append(creds, c)
+	}
+
+	// Response
+	data := map[string]interface{}{
+		"credentials": creds,
+	}
+	response(w, true, "Crendenciales recuperadas con exito", data)
+}
+
+func modifyCredentials(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key to decrypt user data
+	keycom := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskeycom")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), keycom))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), keycom))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("newAlias") + req.Form.Get("newSite") +
+		req.Form.Get("newUsername") + req.Form.Get("aes_key") + req.Form.Get("aeskeycom") +
+		req.Form.Get("cred_id") + req.Form.Get("newId") + req.Form.Get("pubkey") +
+		req.Form.Get("newPassword") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get credential information
+	c := Credential{}
+	c.Alias = req.Form.Get("newAlias")
+	c.Site = req.Form.Get("newSite")
+	c.Username = req.Form.Get("newUsername")
+	c.Password = req.Form.Get("newPassword")
+	c.Key = req.Form.Get("aes_key")
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+	newId := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("newId")), keycom))
+
+	// Search credential id
+	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	chk(errs)
+	if !result.Next() {
+		response(w, false, "Credential not found", nil)
+	}
+
+	// Update information
+	_, err := db.Query("UPDATE users_data SET alias=?, site=?, username=?, aes_key=?, id=? WHERE id=?", utils.Decode64(c.Alias), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), newId, cred_id)
+	chk(err)
+	_, errr := db.Query("UPDATE credentials SET password=? WHERE users_data_id=?", utils.Decode64(c.Password), newId)
+	chk(errr)
+}
+
+func deleteCredentials(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key to decrypt user data
+	keycom := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskeycom")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), keycom))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), keycom))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("cred_id") +
+		req.Form.Get("pubkey") + req.Form.Get("aeskeycom") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get credential information
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+
+	// Search credential id
+	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	chk(errs)
+	if !result.Next() {
+		response(w, false, "Credencial no encontrada", nil)
+	}
+
+	// Delete credential
+	_, err := db.Query("DELETE FROM credentials WHERE users_data_id=?", cred_id)
+	chk(err)
+	_, errr := db.Query("DELETE FROM users_data WHERE id=?", cred_id)
+	chk(errr)
+
+	// Response
+	response(w, true, "Credencial eliminada", nil)
 }
 
 // Handle the requests
@@ -135,9 +321,6 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 	case "login":
 
-		// Aux variable for the response
-		var aux map[string]interface{}
-
 		// Decypher AES Key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
 
@@ -151,24 +334,27 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		// Return database information
 		db := utils.ConnectDB()
 		defer db.Close()
-		result, err := db.Query("SELECT password,session_token,salt FROM users where username = ?", u.Name)
+		result, err := db.Query("SELECT password,session_token,salt,private_key FROM users where username = ?", u.Name)
 		if err != nil {
-			var aux map[string]interface{}
-			response(w, false, "Error inesperado", aux)
+			response(w, false, "Error inesperado", nil)
 			return
 		}
 
 		// Check if any user has been matched
+		var data map[string]interface{}
 		if result.Next() {
 			// Obtain login information
-			var password, session_token, salt []byte
+			var password, session_token, salt, private_key []byte
 			var loginMsg string
-			err = result.Scan(&password, &session_token, &salt)
+			err = result.Scan(&password, &session_token, &salt, &private_key)
 			chk(err)
 
 			// Check login information
 			providedPass := utils.Argon2Key(u.Password, salt)
 			if bytes.Equal(providedPass, password) {
+				data = map[string]interface{}{
+					"privkey": utils.Encode64(private_key),
+				}
 				loginMsg = "Login correcto. Bienvenido"
 			} else {
 				loginMsg = "Login fallido. Credenciales incorrectas para el usuario"
@@ -177,18 +363,25 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			// Update session_token and last_seen fields
 			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where username=?", u.SessionToken, u.Seen, u.Name)
 			if err != nil {
-				response(w, false, "Error inesperado", aux)
+				response(w, false, "Error inesperado", nil)
 				return
 			}
 
 			// Send response
-			response(w, true, loginMsg, aux)
+			response(w, true, loginMsg, data)
 			return
 		} else {
-			response(w, false, "Usuario inexistente", aux)
+			response(w, false, "Usuario inexistente", data)
 			return
 		}
-
+	case "postCred":
+		createCredential(w, req)
+	case "getAllCred":
+		getAllCredentials(w, req)
+	case "putCred":
+		modifyCredentials(w, req)
+	case "deleteCred":
+		deleteCredentials(w, req)
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {

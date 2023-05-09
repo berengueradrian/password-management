@@ -4,30 +4,35 @@ Client
 package client
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"password-management/server"
 	"password-management/utils"
-	"github.com/sethvargo/go-password/password"
-	"crypto/x509"
-	"encoding/base64"
-	"io/ioutil"
-	"time"
 	"strconv"
+	"time"
+
+	"github.com/sethvargo/go-password/password"
 )
 
 // Context of the client to maintain the state between requests
 var state struct {
 	privKey   *rsa.PrivateKey // client's private key (includes the public key)
 	srvPubKey *rsa.PublicKey  // server's public key
+	client    *http.Client
+	user_id   []byte
+	kData     []byte
 }
 
 // chk checks and exits if there are errors (saves writing in simple programs) *** use it from utils and that's it ***
@@ -236,23 +241,13 @@ func Login() {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: tr}
+	state.client = client
 
 	// Hash the password with SHA512
 	keyClient := sha512.Sum512([]byte(passScan))
-	keyLogin := keyClient[:32] // One half for the login (256bits)
-	//keyData := keyClient[32:64] // The other half for the data (256bits)
-
-	// Generate a pair of keys (private, public)
-	/* pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
-	chk(err)
-	pkClient.Precompute() // Accelerate its use with a pre-calculation
-
-	pkJSON, err := json.Marshal(&pkClient) // Encode with JSON
-	chk(err)
-
-	keyPub := pkClient.Public()           // Extract the public key separately
-	pubJSON, err := json.Marshal(&keyPub) // Encode with JSON
-	chk(err) */
+	keyLogin := keyClient[:32]  // One half for the login (256bits)
+	keyData := keyClient[32:64] // the other half for the data (256bits)
+	state.kData = keyData
 
 	// Obtain public key of the server in case is not available
 	if state.srvPubKey == nil {
@@ -282,27 +277,68 @@ func Login() {
 	// Obtain response from server
 	resp := server.Resp{}
 	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Save private key
+	if resp.Ok {
+		pkJSON := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data["privkey"].(string)), keyData))
+		var private_key *rsa.PrivateKey
+		errr := json.Unmarshal(pkJSON, &private_key)
+		chk(errr)
+		state.privKey = private_key
+	}
+
+	// Show response
 	fmt.Println("\n" + resp.Msg + " " + userScan + "." + "\n")
 
-	// Check login information
-	/* if !resp.Ok {
-		fmt.Println("\n" + resp.Msg + "\n")
-	} else {
-		retrieved_password := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data["Password"].(string)), keyData))
-		salt := utils.Decode64(resp.Data["Salt"].(string))
-		hashed_password := utils.Argon2Key(keyLogin, salt)
-		if bytes.Equal(hashed_password, retrieved_password) {
-			fmt.Println("\nLogin correcto. Bienvenido " + userScan + "\n")
-		} else {
-			fmt.Println("\nCredenciales incorrectas para el usuario " + userScan + "\n")
-		}
-	} */
 	// Finish request
 	r.Body.Close()
+
+	// Save user identifier in state if the log in process was correct
+	if resp.Ok {
+		state.user_id = utils.HashSHA512([]byte(userScan))
+		// Enter to the user menu
+		UserMenu()
+	}
+
+}
+
+func UserMenu() {
+	// Prompt menu
+	os.Stdout.WriteString("--- User Menu ---\n" +
+		"- Choose an action to perform\n\n" +
+		"1. See stored credentials\n" +
+		"2. Store a new credential\n" +
+		"3. Modify an existent credential\n" +
+		"4. Delete a credential\n\n" +
+		"- Introduce an option\n" +
+		"> ")
+	// Read user input
+	command := bufio.NewScanner(os.Stdin)
+	if command.Scan() {
+		switch command.Text() {
+		case "1":
+			fmt.Println()
+			ListAllCredentials()
+		case "2":
+			fmt.Println()
+			CreateCredential()
+		case "3":
+			fmt.Println()
+			ModifyCredential()
+		case "4":
+			fmt.Println()
+			DeleteCredential()
+		case "q": // exit
+			fmt.Println("- Exit...\n")
+			os.Exit(0)
+		default:
+			fmt.Println("Uknown command '", command.Text(), "'.")
+		}
+	}
 }
 
 // Run manages the client
-func Run() {
+/* func Run() {
 
 	// We create a special client that does not check the validity of the certificates
 	// This is necessary because we use self-signed certificates (for development & testing)
@@ -387,3 +423,4 @@ func Run() {
 	fmt.Println()
 
 }
+*/
