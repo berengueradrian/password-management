@@ -19,126 +19,6 @@ type File struct {
 	Contents string
 }
 
-func showCredential(cred server.Credential) {
-	// Decypher information
-	cred.Alias = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
-	cred.Site = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Site), state.kData)))
-	cred.Username = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Username), state.kData)))
-	if cred.Filename != "" {
-		cred.Filename = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Filename), state.kData)))
-	}
-	cred.Key = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Key), state.kData)))
-	cred.Password = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Password), []byte(cred.Key))))
-
-	// Prompt information
-	fmt.Println("> Alias: " + cred.Alias)
-	fmt.Println("  Site: " + cred.Site)
-	fmt.Println("  Username: " + cred.Username)
-	fmt.Println("  Password: " + cred.Password)
-	if cred.Filename != "" {
-		fmt.Println("  Filename: " + cred.Filename)
-	}
-	fmt.Println()
-}
-
-func ListAllCredentials() {
-	anyFile := false
-	// Obtain public key of client from private key
-	pkJson, err := json.Marshal(state.privKey.PublicKey)
-
-	// Generate random key to encrypt the data with AES
-	key := make([]byte, 32)
-	rand.Read(key)
-
-	// Prepare data
-	user_id := utils.Encode64(utils.Encrypt(utils.Compress([]byte(state.user_id)), key))
-	pubkey := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key))
-	aeskey := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
-
-	// Digital signature
-	digest := utils.HashSHA512([]byte("getAllCred" + user_id + pubkey + aeskey + utils.GetTime()))
-	sign := utils.SignRSA(digest, state.privKey)
-
-	// Set request data
-	data := url.Values{}
-	data.Set("cmd", "getAllCred")
-	data.Set("user_id", user_id)
-	data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), key)))
-	data.Set("pubkey", pubkey)
-	data.Set("aes_key", aeskey)
-
-	// POST request
-	r, err := state.client.PostForm("https://localhost:10443", data)
-	chk(err)
-
-	// Obtain response from server
-	resp := server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
-
-	// Adapt credentials type
-	var creds []server.Credential
-	cred := server.Credential{}
-	files := make(map[string]File)
-	for _, c := range resp.Data["credentials"].([]interface{}) {
-		aux := c.(map[string]interface{})
-		cred.Alias = aux["Alias"].(string)
-		cred.Site = aux["Site"].(string)
-		cred.Username = aux["Username"].(string)
-		cred.Password = aux["Password"].(string)
-		cred.Key = aux["Key"].(string)
-		cred.Filename = aux["Filename"].(string)
-		if cred.Filename != "" {
-			anyFile = true
-			mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
-			files[mapAlias] = File{
-				Name: cred.Filename,
-				Contents: aux["FileContents"].(string),
-			}
-		}
-		//cred.FileContents = aux["FileContents"].(string)
-		creds = append(creds, cred)
-	}
-
-	// Show credentials
-	fmt.Println("\n" + resp.Msg + "\n")
-	for _, c := range creds {
-		showCredential(c)
-	}
-	if anyFile {
-		download := ""
-		fmt.Print("- Do you want to download any file? (y/n): ")
-		fmt.Scan(&download)
-		if download == "y" {
-			alias := ""
-			fmt.Print("- Enter the credential alias of the file to downlaod: ")
-			fmt.Scan(&alias)
-			file := files[alias]
-			fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
-			fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
-			DownloadFile(fileName, fileContents)
-			fmt.Println("- File downloaded \n")
-		}
-	}
-
-	// Finish request
-	r.Body.Close()
-
-	// Enter to the user menu
-	UserMenu()
-}
-
-// Downloads a file in the current directory of the user
-func DownloadFile(filename string, fileContents []byte) {
-	currentDir, err := os.Getwd()
-	chk(err)
-    f, err := os.Create(currentDir + "/" + filename)
-    chk(err)
-    defer f.Close()
-
-    _, err = io.Copy(f, bytes.NewReader(fileContents))
-    chk(err)
-}
-
 func CreateCredential() {
 	var site, alias, username, password, path, filename, extension, addFile string
 	var fileContents []byte
@@ -201,8 +81,13 @@ func CreateCredential() {
 	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
 	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
 
+	var digest []byte
 	// Digital signature
-	digest := utils.HashSHA512([]byte("postCred" + alias_c + site_c + username_c + aeskey_c + cred_id_c + user_id_c + password_c + pubkey_c + utils.GetTime()))
+	if addFile == "y" {
+		digest = utils.HashSHA512([]byte("postCred" + alias_c + site_c + username_c + filename_c + fileContents_c + aeskey_c + cred_id_c + user_id_c + password_c + pubkey_c + utils.GetTime()))
+	} else {
+		digest = utils.HashSHA512([]byte("postCred" + alias_c + site_c + username_c + aeskey_c + cred_id_c + user_id_c + password_c + pubkey_c + utils.GetTime()))	
+	}
 	sign := utils.SignRSA(digest, state.privKey)
 
 	// Set request values
@@ -239,21 +124,181 @@ func CreateCredential() {
 	UserMenu()
 }
 
+func ListAllCredentials() {
+	anyFile := false
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+
+	// Generate random key to encrypt the data with AES
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Prepare data
+	user_id := utils.Encode64(utils.Encrypt(utils.Compress([]byte(state.user_id)), key))
+	pubkey := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key))
+	aeskey := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+
+	// Digital signature
+	digest := utils.HashSHA512([]byte("getAllCred" + user_id + pubkey + aeskey + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+
+	// Set request data
+	data := url.Values{}
+	data.Set("cmd", "getAllCred")
+	data.Set("user_id", user_id)
+	data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), key)))
+	data.Set("pubkey", pubkey)
+	data.Set("aes_key", aeskey)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Adapt credentials type
+	var creds []server.Credential
+	cred := server.Credential{}
+	files := make(map[string]File)
+	for _, c := range resp.Data["credentials"].([]interface{}) {
+		aux := c.(map[string]interface{})
+		cred.Alias = aux["Alias"].(string)
+		cred.Site = aux["Site"].(string)
+		cred.Username = aux["Username"].(string)
+		cred.Password = aux["Password"].(string)
+		cred.Key = aux["Key"].(string)
+		cred.Filename = aux["Filename"].(string)
+		if cred.Filename != "" {
+			anyFile = true
+			mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
+			files[mapAlias] = File{
+				Name: cred.Filename,
+				Contents: aux["FileContents"].(string),
+			}
+		}
+		creds = append(creds, cred)
+	}
+
+	// Show credentials
+	fmt.Println("\n" + resp.Msg + "\n")
+	for _, c := range creds {
+		showCredential(c)
+	}
+	if anyFile {
+		download := ""
+		fmt.Print("- Do you want to download any file? (y/n): ")
+		fmt.Scan(&download)
+		if download == "y" {
+			alias := ""
+			fmt.Print("- Enter the credential alias of the file to downlaod: ")
+			fmt.Scan(&alias)
+			file := files[alias]
+			fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
+			fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
+			DownloadFile(fileName, fileContents)
+			fmt.Println("- File downloaded \n")
+		}
+	}
+
+	// Finish request
+	r.Body.Close()
+
+	// Enter to the user menu
+	UserMenu()
+}
+
+func showCredential(cred server.Credential) {
+	// Decypher information
+	cred.Alias = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
+	cred.Site = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Site), state.kData)))
+	cred.Username = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Username), state.kData)))
+	if cred.Filename != "" {
+		cred.Filename = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Filename), state.kData)))
+	}
+	cred.Key = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Key), state.kData)))
+	cred.Password = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Password), []byte(cred.Key))))
+
+	// Prompt information
+	fmt.Println("> Alias: " + cred.Alias)
+	fmt.Println("  Site: " + cred.Site)
+	fmt.Println("  Username: " + cred.Username)
+	fmt.Println("  Password: " + cred.Password)
+	if cred.Filename != "" {
+		fmt.Println("  Filename: " + cred.Filename)
+	}
+	fmt.Println()
+}
+
+// Downloads a file in the current directory of the user
+func DownloadFile(filename string, fileContents []byte) {
+	currentDir, err := os.Getwd()
+	chk(err)
+    f, err := os.Create(currentDir + "/" + filename)
+    chk(err)
+    defer f.Close()
+
+    _, err = io.Copy(f, bytes.NewReader(fileContents))
+    chk(err)
+}
+
 func ModifyCredential() {
-	var alias, newSite, newAlias, newUsername, newPassword string
+	var alias, newAlias, newSite, newUsername, newPassword, newFilename, path, extension string
+	//var newAliasB, newSiteB, newUsernameB, newPasswordB, newFileB bool
+	var fileContents []byte
 
 	// Collect user data
 	fmt.Print("-- Modify a credential --\n")
-	fmt.Print("- Alias: ")
+	fmt.Print("- Enter the credential's alias: ")
 	fmt.Scan(&alias)
-	fmt.Print("- New alias: ")
-	fmt.Scan(&newAlias)
-	fmt.Print("- New site: ")
-	fmt.Scan(&newSite)
-	fmt.Print("- New username: ")
-	fmt.Scan(&newUsername)
-	fmt.Print("- New password: ")
-	fmt.Scan(&newPassword)
+	//fmt.Print("- Do you want to modify the alias? (y/n): ")
+	//fmt.Scan(&newAlias)
+	//if newAlias == "y" {
+		//newAliasB = true
+		fmt.Print("- New alias: ")
+		fmt.Scan(&newAlias)
+	//}
+	//fmt.Print("- Do you want to modify the site? (y/n): ")
+	//fmt.Scan(&newSite)
+	//if newSite == "y" {
+		//newSiteB = true
+		fmt.Print("- New site: ")
+		fmt.Scan(&newSite)
+	//}
+	//fmt.Print("- Do you want to modify the username? (y/n): ")
+	//fmt.Scan(&newUsername)
+	//if newUsername == "y" {
+		//newUsernameB = true
+		fmt.Print("- New username: ")
+		fmt.Scan(&newUsername)
+	//}
+	//fmt.Print("- Do you want to modify the password? (y/n): ")
+	//fmt.Scan(&newPassword)
+	//if newPassword == "y" {
+		//newPasswordB = true
+		fmt.Print("- New password: ")
+		fmt.Scan(&newPassword)
+	//}
+	//fmt.Print("- Do you want to modify the file? (y/n): ")
+	//fmt.Scan(&newFile)
+	//if newFile == "y" {
+		//newFileB = true
+		for { // read the file path while it is in a allowed extension
+			fmt.Print("- New File (introduce the path): ")
+			fmt.Scan(&path)
+			newFilename = filepath.Base(path) // extract file name for saving it as it is
+			extension = strings.TrimPrefix(filepath.Ext(newFilename), ".") // extract extension to check its validity
+			if extension != "txt" && extension != "der" && extension != "key" && extension != "crt" && extension != "json"  && extension != "yaml" && extension != "pem" && extension != "p12" && extension != "pfx" && extension != "ini" {
+				fmt.Println("*Error: Invalid file extension")
+				fmt.Println("*File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
+			} else {
+				break
+			}
+		}
+		// Read the contents of the file
+		fileContents = readFile(path)
+	//}
 
 	// Get credential id
 	cred_id := utils.HashSHA512([]byte(alias + string(state.user_id)))
@@ -273,6 +318,8 @@ func ModifyCredential() {
 	newAlias_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newAlias)), state.kData))
 	newSite_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newSite)), state.kData))
 	newUsername_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newUsername)), state.kData))
+	newFilename_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newFilename)), state.kData))
+	newFileContents_c := utils.Encode64(utils.Encrypt(utils.Compress(fileContents), state.kData))
 	aeskey_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData))
 	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
 	cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(cred_id), keycom))
@@ -282,7 +329,7 @@ func ModifyCredential() {
 
 	// Digital signature
 	digest := utils.HashSHA512([]byte("putCred" + newAlias_c + newSite_c +
-		newUsername_c + aeskey_c + keycom_c + cred_id_c + newId_c + pubkey_c +
+		newUsername_c + newFilename_c + aeskey_c + keycom_c + cred_id_c + newId_c + pubkey_c +
 		newPassword_c + utils.GetTime()))
 	sign := utils.SignRSA(digest, state.privKey)
 
@@ -292,6 +339,8 @@ func ModifyCredential() {
 	data.Set("newAlias", newAlias_c)
 	data.Set("newSite", newSite_c)
 	data.Set("newUsername", newUsername_c)
+	data.Set("newFilename", newFilename_c)
+	data.Set("newFileContents", newFileContents_c)
 	data.Set("aes_key", aeskey_c)
 	data.Set("aeskeycom", keycom_c)
 	data.Set("cred_id", cred_id_c)

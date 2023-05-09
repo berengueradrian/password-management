@@ -106,9 +106,17 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	chk(_error)
 
 	// Verify signature
-	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
+	var digest []byte
+	if req.Form.Get("filename") != "" {
+		// Verify signature
+		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
+			req.Form.Get("filename") + req.Form.Get("filecontents") + req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
+			req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
+	} else {
+		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
 		req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
 		req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
+	}
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	// Get credential information
@@ -201,7 +209,7 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 
 	// Verify signature
 	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("newAlias") + req.Form.Get("newSite") +
-		req.Form.Get("newUsername") + req.Form.Get("aes_key") + req.Form.Get("aeskeycom") +
+		req.Form.Get("newUsername") + req.Form.Get("newFilename") + req.Form.Get("aes_key") + req.Form.Get("aeskeycom") +
 		req.Form.Get("cred_id") + req.Form.Get("newId") + req.Form.Get("pubkey") +
 		req.Form.Get("newPassword") + utils.GetTime()))
 	_ = utils.VerifyRSA(digest, signature, public_key)
@@ -211,6 +219,8 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	c.Alias = req.Form.Get("newAlias")
 	c.Site = req.Form.Get("newSite")
 	c.Username = req.Form.Get("newUsername")
+	c.Filename = req.Form.Get("newFilename")
+	c.FileContents = req.Form.Get("newFileContents")
 	c.Password = req.Form.Get("newPassword")
 	c.Key = req.Form.Get("aes_key")
 	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
@@ -226,7 +236,7 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	// Update information
 	_, err := db.Query("UPDATE users_data SET alias=?, site=?, username=?, aes_key=?, id=? WHERE id=?", utils.Decode64(c.Alias), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), newId, cred_id)
 	chk(err)
-	_, errr := db.Query("UPDATE credentials SET password=? WHERE users_data_id=?", utils.Decode64(c.Password), newId)
+	_, errr := db.Query("UPDATE credentials SET password=?, filename=?, filecontents=? WHERE users_data_id=?", utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents), newId)
 	chk(errr)
 }
 
