@@ -111,7 +111,7 @@ func CreateCredential() {
 			fmt.Scan(&path)
 			filename = filepath.Base(path) // extract file name for saving it as it is
 			extension = strings.TrimPrefix(filepath.Ext(filename), ".") // extract extension to check its validity
-			if extension != "txt" || extension != "der" || extension != "key" || extension != "crt" || extension != "json"  || extension != "yaml" || extension != "pem" || extension != "p12" || extension != "pfx" || extension != "ini" {
+			if extension != "txt" && extension != "der" && extension != "key" && extension != "crt" && extension != "json"  && extension != "yaml" && extension != "pem" && extension != "p12" && extension != "pfx" && extension != "ini" {
 				fmt.Println("*Error: Invalid file extension")
 				fmt.Println("*File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
 			} else {

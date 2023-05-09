@@ -359,9 +359,9 @@ func handler(w http.ResponseWriter, req *http.Request) {
 				data = map[string]interface{}{
 					"privkey": utils.Encode64(private_key),
 				}
-				loginMsg = "Login correcto. Bienvenido"
+				loginMsg = "Login correct. Welcome"
 			} else {
-				loginMsg = "Login fallido. Credenciales incorrectas para el usuario"
+				loginMsg = "Login failed. Invalid credentials for user"
 			}
 
 			// Update session_token and last_seen fields
