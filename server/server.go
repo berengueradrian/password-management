@@ -19,6 +19,7 @@ import (
 var state struct {
 	// TO-DO: need to check if this state should be encrypted or something
 	privKey *rsa.PrivateKey // server's private key (includes the public key)
+	dbPass  string
 }
 
 // example of a user
@@ -80,6 +81,7 @@ func Run() {
 	state.privKey, err = rsa.GenerateKey(rand.Reader, 4096) // it takes a bit to generate
 	chk(err)                                                // check for errors
 	state.privKey.Precompute()                              // accelerate its use with precomputation
+	state.dbPass = "secreto"
 
 	http.HandleFunc("/", handler) // assign a global handler
 
@@ -364,7 +366,15 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		u.Data["private"] = utils.Decode64(req.Form.Get("privkey"))                                 // private key, encrypted with keyData
 
 		// Insert data into the db
-		insert, err := db.Query("INSERT INTO users (username, password, salt, session_token, last_seen, public_key, private_key) VALUES (?, ?, ?, ?, ?, ?, ?)", u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"])
+		insert, err := db.Query(`INSERT INTO users (username, password, salt, session_token, last_seen, public_key, private_key) VALUES
+		 (AES_ENCRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000'),
+		 (AES_ENCRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000'),
+		 (AES_ENCRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000'),
+		 (AES_ENCRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000'),
+		 (AES_ENCRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000'),
+		 (AES_ENCRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000'),
+		 (AES_ENCRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000'))`,
+			u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"])
 		chk(err)             // check for errors
 		defer insert.Close() // close the insert statement
 		data := map[string]interface{}{
@@ -387,7 +397,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		// Return database information
 		db := utils.ConnectDB()
 		defer db.Close()
-		result, err := db.Query("SELECT password,session_token,salt,private_key FROM users where username = ?", u.Name)
+		result, err := db.Query(`SELECT password,session_token,salt,private_key FROM users 
+			where username = AES_DECRYPT('?','`+state.dbPass+`', 'RANDOM_BYTES(16)', 'pbkdf2_hmac','', '2000')`, u.Name)
 		if err != nil {
 			response(w, false, "Unexpected error", nil)
 			return

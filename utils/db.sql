@@ -1,5 +1,6 @@
 create database passmanager;
 use passmanager;
+SET block_encryption_mode = 'aes-256-cfb8';
 -- users table where the login in the password management app is stored
 create table users
 (
