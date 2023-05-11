@@ -40,6 +40,8 @@ create table credentials
 (
     users_data_id varbinary(256) not null,
     password varbinary(256) not null,
+    filename varbinary(256) null,
+    filecontents varbinary(3072) null,
     constraint users_data_id
         primary key (users_data_id),
     constraint users_data_id
@@ -48,13 +50,14 @@ create table credentials
 
 -- files table where the files associated to the credentials are stored
 -- stored encrypted (disk encryption, db encryption...)
-create table files
-(
-    id            int    not null,
-    credential_id varbinary(256)    not null,
-    path          varbinary(256) not null,
-    constraint id
-        primary key (id),
-    constraint credential_id
-        foreign key (credential_id) references credentials (users_data_id)
-);
+-- not needed for now
+-- create table files
+-- (
+--     id            int    not null,
+--     credential_id varbinary(256)    not null,
+--     path          varbinary(256) not null,
+--     constraint id
+--         primary key (id),
+--     constraint credential_id
+--         foreign key (credential_id) references credentials (users_data_id)
+-- );
