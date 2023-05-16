@@ -132,12 +132,12 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	cred_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), keycom))
 
 	// Check existance of alias
-	result, err_s := db.Query("SELECT alias FROM users_data where alias = ?", cred_id)
+	result, err_s := db.Query("SELECT alias FROM users_data where id = ?", cred_id)
 	if err_s != nil {
 		response(w, false, "Unexpected error", nil)
 		return
 	}
-	if !result.Next() {
+	if result.Next() {
 		response(w, false, "Duplicated alias. Credential not created", nil)
 		return
 	}
@@ -242,6 +242,17 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(errs)
 	if !result.Next() {
 		response(w, false, "Credential not found", nil)
+	}
+
+	// Check existance of alias
+	result, err_s := db.Query("SELECT alias FROM users_data where id = ?", newId)
+	if err_s != nil {
+		response(w, false, "Unexpected error", nil)
+		return
+	}
+	if result.Next() {
+		response(w, false, "Duplicated alias. Credential not modified", nil)
+		return
 	}
 
 	// Update information

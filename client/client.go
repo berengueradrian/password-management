@@ -297,7 +297,9 @@ func Login() {
 	if resp.Ok {
 		state.user_id = utils.HashSHA512([]byte(userScan))
 		// Enter to the user menu
-		UserMenu()
+		for {
+			UserMenu()
+		}
 	}
 
 }
