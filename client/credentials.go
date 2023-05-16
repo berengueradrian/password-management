@@ -191,14 +191,21 @@ func ListAllCredentials() {
 		fmt.Print("- Do you want to download any file? (y/n): ")
 		fmt.Scan(&download)
 		if download == "y" {
-			alias := ""
-			fmt.Print("- Enter the credential alias of the file to downlaod: ")
-			fmt.Scan(&alias)
-			file := files[alias]
-			fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
-			fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
-			DownloadFile(fileName, fileContents)
-			fmt.Println("- File downloaded \n")
+			for {
+				alias := ""
+				fmt.Print("- Enter the credential alias of the file to downlaod: ")
+				fmt.Scan(&alias)
+				file, ok := files[alias]
+				if ok {
+					fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
+					fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
+					DownloadFile(fileName, fileContents)
+					fmt.Println("- File downloaded \n")
+					break
+				} else {
+					fmt.Println("*Error: Alias incorrect, try again \n")
+				}
+			}
 		}
 	}
 
