@@ -13,7 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -152,8 +152,12 @@ func Register() {
 
 	r, err := client.PostForm("https://localhost:10443", data) // send a POST request
 	chk(err)
-	io.Copy(os.Stdout, r.Body) // show the body of the response (it is a reader)
-	fmt.Println()
+	//io.Copy(os.Stdout, r.Body) // show the body of the response (it is a reader)
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp)
+	fmt.Println(resp.Msg + ".\n")
+
+	//fmt.Println()
 	r.Body.Close() // close the reader of the body
 }
 
