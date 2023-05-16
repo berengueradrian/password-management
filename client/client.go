@@ -304,6 +304,18 @@ func Login() {
 
 }
 
+// Logout from the password management system
+func Logout() {
+	// Invalidate the user's state
+	state.user_id = nil
+	state.privKey = nil
+	state.client = nil
+	state.kData = nil
+	state.srvPubKey = nil
+	fmt.Println("- Logged out")
+	fmt.Println("-- Bye --")
+}
+
 func UserMenu() {
 	// Prompt menu
 	os.Stdout.WriteString("--- User Menu ---\n" +
@@ -311,7 +323,8 @@ func UserMenu() {
 		"1. See stored credentials\n" +
 		"2. Store a new credential\n" +
 		"3. Modify an existent credential\n" +
-		"4. Delete a credential\n\n" +
+		"4. Delete a credential\n" +
+		"5. Log out\n" +
 		"- Introduce an option\n" +
 		"> ")
 	// Read user input
@@ -330,6 +343,10 @@ func UserMenu() {
 		case "4":
 			fmt.Println()
 			DeleteCredential()
+		case "5":
+			fmt.Println()
+			Logout()
+			os.Exit(0)
 		case "q": // exit
 			fmt.Println("- Exit...\n")
 			os.Exit(0)
