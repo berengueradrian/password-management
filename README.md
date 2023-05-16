@@ -1,6 +1,6 @@
 # Password management app in Go
 
-This is an application for managing users credentials with a client-server structure made in Go.
+This is an application for securely managing users credentials with a client-server structure made in Go.
 
 ## Project structure
 
@@ -8,7 +8,9 @@ Explain folders and files (db.sql, localhost.crt....)
 
 ## Use
 
-Explain how to use it
+1. Compile the project with `go build`.
+2. In a terminal, run the server with `go run main.go -s`.
+3. In another terminal, run the client with `go run main.go`.
 
 ## Basic functionalities
 
@@ -24,16 +26,13 @@ Explain how to use it
 - Random password generator and by profiles (length, characters groups, easy to remember/pronounce).
 - Capability to generate public and private key credentials.
 - Digital signature incorporation to guarantee the origin of the data.
-- Incorporate additional data on every request (such as files, txt, etc).
+- Incorporate files on every credential.
 
 ## Doubts
 
     - **New**:
         - Usefull to compress a hash? Ask about the compression, encoding and all these stuff to really understand when and how to do it.
-        - How to do a credentials saving with files or txt, etc?
-        - What do we refer when we say random passwords by profiles?
         - Is it needed to use session token with last seen date and public key signature? (is it good to sign the token for double security?)
-        - Is it good to generate the user's id token from the username and keyLogin?
         - Is it needed to cypher the salt?
         - Cypher all data at once or better one by one?
         - Is it normal that the public and private keys occupy more than 256 even after compressed?
