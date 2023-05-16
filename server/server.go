@@ -399,6 +399,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			// Obtain login information
 			var password, session_token, salt, private_key []byte
 			var loginMsg string
+			var loginOk bool
 			err = result.Scan(&password, &session_token, &salt, &private_key)
 			chk(err)
 
@@ -408,8 +409,10 @@ func handler(w http.ResponseWriter, req *http.Request) {
 				data = map[string]interface{}{
 					"privkey": utils.Encode64(private_key),
 				}
+				loginOk = true
 				loginMsg = "Login correct. Welcome"
 			} else {
+				loginOk = false
 				loginMsg = "Login failed. Invalid credentials for user"
 			}
 
@@ -421,7 +424,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			}
 
 			// Send response
-			response(w, true, loginMsg, data)
+			response(w, loginOk, loginMsg, data)
 			return
 		} else {
 			response(w, false, "User non existent", data)
