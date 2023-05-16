@@ -34,13 +34,13 @@ type user struct {
 // Credentials has also id and user_id fields
 // We don't need it for the response so we don't add it to the struct
 type Credential struct {
-	Alias    string
-	Site     string
-	Username string
-	Filename string
+	Alias        string
+	Site         string
+	Username     string
+	Filename     string
 	FileContents string
-	Password string
-	Key      string
+	Password     string
+	Key          string
 }
 
 // Server's response
@@ -114,8 +114,8 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 			req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
 	} else {
 		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
-		req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
-		req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
+			req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
+			req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
 	}
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
@@ -238,6 +238,9 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(err)
 	_, errr := db.Query("UPDATE credentials SET password=?, filename=?, filecontents=? WHERE users_data_id=?", utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents), newId)
 	chk(errr)
+
+	// Response
+	response(w, true, "Credential modified", nil)
 }
 
 func deleteCredentials(w http.ResponseWriter, req *http.Request) {
@@ -278,6 +281,39 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 
 	// Response
 	response(w, true, "Credential deleted", nil)
+}
+
+func checkCredendial(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key to decrypt user data
+	key := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskey")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), key))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), key))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("cred_id") +
+		req.Form.Get("pubkey") + req.Form.Get("aeskey") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get credential information
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), key))
+
+	// Search credential id
+	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	chk(errs)
+	if !result.Next() {
+		response(w, false, "Credential not found", nil)
+	} else {
+		response(w, true, "Credential found", nil)
+	}
 }
 
 // Handle the requests
@@ -399,6 +435,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		modifyCredentials(w, req)
 	case "deleteCred":
 		deleteCredentials(w, req)
+	case "checkCred":
+		checkCredendial(w, req)
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {
