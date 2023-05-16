@@ -22,6 +22,7 @@ type File struct {
 func CreateCredential() {
 	var site, alias, username, password, path, filename, extension, addFile string
 	var fileContents []byte
+	var err error
 
 	// Collect user data
 	fmt.Print("-- Create a credential --\n")
@@ -45,11 +46,17 @@ func CreateCredential() {
 				fmt.Println("*Error: Invalid file extension")
 				fmt.Println("*File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
 			} else {
-				break
+				// Read the contents of the file
+				fileContents, err = readFile(path)
+
+				if err != nil {
+					fmt.Println("*Error reading the file: ", err)
+				} else {
+					break
+				}
 			}
 		}
-		// Read the contents of the file
-		fileContents = readFile(path)
+		
 	}
 
 	// Generate random key to encrypt the data with AES
@@ -193,20 +200,26 @@ func ListAllCredentials() {
 			fmt.Print("- Do you want to download any file? (y/n): ")
 			fmt.Scan(&download)
 			if download == "y" {
-				alias := ""
-				fmt.Print("- Enter the credential alias of the file to downlaod: ")
-				fmt.Scan(&alias)
-				file := files[alias]
-				fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
-				fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
-				DownloadFile(fileName, fileContents)
-				fmt.Println("- File downloaded \n")
+				for {
+					alias := ""
+					fmt.Print("- Enter the credential alias of the file to downlaod: ")
+					fmt.Scan(&alias)
+					file, ok := files[alias]
+					if ok {
+						fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
+						fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
+						DownloadFile(fileName, fileContents)
+						fmt.Println("- File downloaded \n")
+						break
+					} else {
+						fmt.Println("*Error: Alias incorrect, try again \n")
+					}
+				}
 			}
+		} else {
+			fmt.Println("No credentials were stored\n")
 		}
-	} else {
-		fmt.Println("No credentials were stored\n")
 	}
-
 	// Finish request
 	r.Body.Close()
 
@@ -297,6 +310,7 @@ func ModifyCredential() {
 	var alias, newAlias, newSite, newUsername, newPassword, newFilename, path, extension string
 	//var newAliasB, newSiteB, newUsernameB, newPasswordB, newFileB bool
 	var fileContents []byte
+	var err error
 
 	// Collect user data
 	fmt.Print("-- Modify a credential --\n")
@@ -351,11 +365,17 @@ func ModifyCredential() {
 			fmt.Println("*Error: Invalid file extension")
 			fmt.Println("*File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
 		} else {
-			break
+			// Read the contents of the file
+			fileContents, err = readFile(path)
+
+			if err != nil {
+				fmt.Println("*Error reading the file: ", err)
+			} else {
+				break
+			}
 		}
 	}
-	// Read the contents of the file
-	fileContents = readFile(path)
+	
 	//}
 
 	// Get credential id
@@ -474,19 +494,25 @@ func DeleteCredential() {
 	UserMenu()
 }
 
-func readFile(path string) []byte {
+func readFile(path string) ([]byte, error) {
 	file, err := os.Open(path)
-	chk(err)
+	if err != nil {
+		return nil, err
+	}
 	defer file.Close()
 
 	fileInfo, err := file.Stat()
-	chk(err)
+	if err != nil {
+		return nil, err
+	}
 
 	fileSize := fileInfo.Size()
 	buffer := make([]byte, fileSize)
 
 	_, err = file.Read(buffer)
-	chk(err)
+	if err != nil {
+		return nil, err
+	}
 
-	return buffer
+	return buffer, nil
 }
