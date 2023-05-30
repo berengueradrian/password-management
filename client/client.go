@@ -13,7 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -152,8 +152,12 @@ func Register() {
 
 	r, err := client.PostForm("https://localhost:10443", data) // send a POST request
 	chk(err)
-	io.Copy(os.Stdout, r.Body) // show the body of the response (it is a reader)
-	fmt.Println()
+	//io.Copy(os.Stdout, r.Body) // show the body of the response (it is a reader)
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp)
+	fmt.Println(resp.Msg + ".\n")
+
+	//fmt.Println()
 	r.Body.Close() // close the reader of the body
 }
 
@@ -311,45 +315,51 @@ func Logout() {
 	state.kData = nil
 	state.srvPubKey = nil
 	fmt.Println("- Logged out")
-	fmt.Println("-- Bye --")
+	fmt.Println("-- Bye --\n")
 }
 
 func UserMenu() {
-	// Prompt menu
-	os.Stdout.WriteString("--- User Menu ---\n" +
-		"- Choose an action to perform\n\n" +
-		"1. See stored credentials\n" +
-		"2. Store a new credential\n" +
-		"3. Modify an existent credential\n" +
-		"4. Delete a credential\n" +
-		"5. Log out\n" +
-		"- Introduce an option\n" +
-		"> ")
-	// Read user input
-	command := bufio.NewScanner(os.Stdin)
-	if command.Scan() {
-		switch command.Text() {
-		case "1":
-			fmt.Println()
-			ListAllCredentials()
-		case "2":
-			fmt.Println()
-			CreateCredential()
-		case "3":
-			fmt.Println()
-			ModifyCredential()
-		case "4":
-			fmt.Println()
-			DeleteCredential()
-		case "5":
-			fmt.Println()
-			Logout()
-			os.Exit(0)
-		case "q": // exit
-			fmt.Println("- Exit...\n")
-			os.Exit(0)
-		default:
-			fmt.Println("Uknown command '", command.Text(), "'.")
+	logout := false
+	for{
+		// Prompt menu
+		os.Stdout.WriteString("--- User Menu ---\n" +
+			"- Choose an action to perform\n\n" +
+			"1. See stored credentials\n" +
+			"2. Store a new credential\n" +
+			"3. Modify an existent credential\n" +
+			"4. Delete a credential\n" +
+			"5. Log out\n\n" +
+			"- Introduce an option\n" +
+			"> ")
+		// Read user input
+		command := bufio.NewScanner(os.Stdin)
+		if command.Scan() {
+			switch command.Text() {
+			case "1":
+				fmt.Println()
+				ListAllCredentials()
+			case "2":
+				fmt.Println()
+				CreateCredential()
+			case "3":
+				fmt.Println()
+				ModifyCredential()
+			case "4":
+				fmt.Println()
+				DeleteCredential()
+			case "5":
+				fmt.Println()
+				Logout()
+				logout = true
+			case "q": // exit
+				fmt.Println("- Exit...\n")
+				os.Exit(0)
+			default:
+				fmt.Println("Uknown command '", command.Text(), "'.")
+			}
+		}
+		if logout {
+			break
 		}
 	}
 }

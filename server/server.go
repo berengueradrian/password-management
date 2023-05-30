@@ -131,6 +131,17 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
 	cred_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), keycom))
 
+	// Check existance of alias
+	result, err_s := db.Query("SELECT alias FROM users_data where id = ?", cred_id)
+	if err_s != nil {
+		response(w, false, "Unexpected error", nil)
+		return
+	}
+	if result.Next() {
+		response(w, false, "Duplicated alias. Credential not created", nil)
+		return
+	}
+
 	// Insert information
 	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?)", cred_id, utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias))
 	chk(err)
@@ -231,6 +242,17 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(errs)
 	if !result.Next() {
 		response(w, false, "Credential not found", nil)
+	}
+
+	// Check existance of alias
+	result, err_s := db.Query("SELECT alias FROM users_data where id = ?", newId)
+	if err_s != nil {
+		response(w, false, "Unexpected error", nil)
+		return
+	}
+	if result.Next() {
+		response(w, false, "Duplicated alias. Credential not modified", nil)
+		return
 	}
 
 	// Update information
