@@ -305,9 +305,9 @@ func ListAllCredentials() {
 					}
 				}
 			}
-		} else {
-			fmt.Println("No credentials were stored\n")
 		}
+	} else {
+		fmt.Println("No credentials were stored\n")
 	}
 	// Finish request
 	r.Body.Close()
