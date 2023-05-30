@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"password-management/utils"
+	"strings"
 	//"fmt"
 )
 
@@ -34,13 +35,14 @@ type user struct {
 // Credentials has also id and user_id fields
 // We don't need it for the response so we don't add it to the struct
 type Credential struct {
-	Alias    string
-	Site     string
-	Username string
-	Filename string
-	FileContents string
-	Password string
-	Key      string
+	Alias         string
+	Site          string
+	Username      string
+	Filename      string
+	FileContents  string
+	Password      string
+	Key           string
+	Credential_id string
 }
 
 // Server's response
@@ -111,11 +113,11 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 		// Verify signature
 		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
 			req.Form.Get("filename") + req.Form.Get("filecontents") + req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
-			req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
+			req.Form.Get("password") + req.Form.Get("pubkey") + req.Form.Get("cred_id_pass") + req.Form.Get("cred_id_pass_orig") + utils.GetTime()))
 	} else {
 		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
-		req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
-		req.Form.Get("password") + req.Form.Get("pubkey") + utils.GetTime()))
+			req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
+			req.Form.Get("password") + req.Form.Get("pubkey") + req.Form.Get("cred_id_pass") + req.Form.Get("cred_id_pass_orig") + utils.GetTime()))
 	}
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
@@ -128,14 +130,16 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	c.FileContents = req.Form.Get("filecontents")
 	c.Password = req.Form.Get("password")
 	c.Key = req.Form.Get("aes_key")
-	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+	cred_id := req.Form.Get("cred_id")
+	cred_id_pass := req.Form.Get("cred_id_pass")
+	cred_id_pass_orig := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id_pass_orig")), keycom))
 	cred_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), keycom))
 
 	// Insert information
-	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?)", cred_id, utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias))
-	chk(err)
-	_, errr := db.Query("INSERT INTO credentials values (?,?,?,?)", cred_id, utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents))
+	_, errr := db.Query("INSERT INTO credentials values (?,?,?,?)", cred_id_pass_orig, utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents))
 	chk(errr)
+	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?,?)", utils.Decode64(cred_id), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias), utils.Decode64(cred_id_pass))
+	chk(err)
 
 	// Response
 	response(w, true, "Crendential created", nil)
@@ -164,24 +168,22 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 	user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), aeskey))
 
 	// Get list of credentials
-	result, err := db.Query(`SELECT alias, site, username, aes_key, password, filename, filecontents
-														FROM users_data, credentials
-														WHERE user_id=? and users_data.id=credentials.users_data_id`,
-		user_id)
+	result, err := db.Query(`SELECT alias,site,username,aes_key,credential_id FROM users_data WHERE user_id=?`, user_id)
 	chk(err)
 
 	var creds []Credential
 	c := Credential{}
-	var alias, site, username, key, password, filename, filecontents []byte
+	var alias, site, username, key, credential_id []byte
 	for result.Next() {
-		result.Scan(&alias, &site, &username, &key, &password, &filename, &filecontents)
+		result.Scan(&alias, &site, &username, &key, &credential_id)
 		c.Alias = utils.Encode64(alias)
 		c.Site = utils.Encode64(site)
 		c.Username = utils.Encode64(username)
 		c.Key = utils.Encode64(key)
-		c.Password = utils.Encode64(password)
-		c.Filename = utils.Encode64(filename)
-		c.FileContents = utils.Encode64(filecontents)
+		//c.Password = utils.Encode64(password)
+		c.Credential_id = utils.Encode64(credential_id)
+		//c.Filename = utils.Encode64(filename)
+		//c.FileContents = utils.Encode64(filecontents)
 		creds = append(creds, c)
 	}
 
@@ -190,6 +192,64 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 		"credentials": creds,
 	}
 	response(w, true, "Credentials retrieved", data)
+}
+
+func getAllPasswords(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key
+	aeskey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aeskey))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aeskey))
+	err := json.Unmarshal(pubkey, &public_key)
+	chk(err)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("identifiers") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get request data
+	identifiers := utils.Decode64(req.Form.Get("identifiers"))
+	identifiers_array := strings.Split(string(identifiers), ",")
+	var id_array []string
+	for _, i := range identifiers_array {
+		id_array = append(id_array, string(utils.Decompress(utils.Decrypt(utils.Decode64(string(i)), aeskey))))
+	}
+
+	// Get list of passwords
+	query_string := "SELECT id,password,filename,filecontents FROM credentials WHERE id IN ("
+	for i, id := range id_array {
+		if i > 0 {
+			query_string += ","
+		}
+		query_string += "'" + id + "'"
+	}
+	query_string += ")"
+	result, err := db.Query(query_string)
+	chk(err)
+
+	var creds []Credential
+	c := Credential{}
+	var id, password, filename, filecontents []byte
+	for result.Next() {
+		result.Scan(&id, &password, &filename, &filecontents)
+		c.Credential_id = utils.Encode64(id)
+		c.Password = utils.Encode64(password)
+		c.Filename = utils.Encode64(filename)
+		c.FileContents = utils.Encode64(filecontents)
+		creds = append(creds, c)
+	}
+
+	// Response
+	data := map[string]interface{}{
+		"passwords": creds,
+	}
+	response(w, true, "Passwords retrieved", data)
 }
 
 func modifyCredentials(w http.ResponseWriter, req *http.Request) {
@@ -395,6 +455,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		createCredential(w, req)
 	case "getAllCred":
 		getAllCredentials(w, req)
+	case "getAllPass":
+		getAllPasswords(w, req)
 	case "putCred":
 		modifyCredentials(w, req)
 	case "deleteCred":
