@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
@@ -134,7 +135,6 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	cred_id_pass := req.Form.Get("cred_id_pass")
 	cred_id_pass_orig := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id_pass_orig")), keycom))
 	cred_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), keycom))
-
 	// Insert information
 	_, errr := db.Query("INSERT INTO credentials values (?,?,?,?)", cred_id_pass_orig, utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents))
 	chk(errr)
@@ -218,7 +218,7 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 	identifiers_array := strings.Split(string(identifiers), ",")
 	var id_array []string
 	for _, i := range identifiers_array {
-		id_array = append(id_array, string(utils.Decompress(utils.Decrypt(utils.Decode64(string(i)), aeskey))))
+		id_array = append(id_array, string(utils.Decompress(utils.Decrypt(utils.Decode64(i), aeskey))))
 	}
 
 	// Get list of passwords
@@ -229,6 +229,7 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 		}
 		query_string += "'" + id + "'"
 	}
+	fmt.Println(query_string)
 	query_string += ")"
 	result, err := db.Query(query_string)
 	chk(err)
@@ -298,6 +299,9 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	chk(err)
 	_, errr := db.Query("UPDATE credentials SET password=?, filename=?, filecontents=? WHERE users_data_id=?", utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents), newId)
 	chk(errr)
+
+	// Response
+	response(w, true, "Credential modified", nil)
 }
 
 func deleteCredentials(w http.ResponseWriter, req *http.Request) {
@@ -338,6 +342,39 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 
 	// Response
 	response(w, true, "Credential deleted", nil)
+}
+
+func checkCredendial(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key to decrypt user data
+	key := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskey")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), key))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), key))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("cred_id") +
+		req.Form.Get("pubkey") + req.Form.Get("aeskey") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get credential information
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), key))
+
+	// Search credential id
+	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	chk(errs)
+	if !result.Next() {
+		response(w, false, "Credential not found", nil)
+	} else {
+		response(w, true, "Credential found", nil)
+	}
 }
 
 // Handle the requests
@@ -423,6 +460,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			// Obtain login information
 			var password, session_token, salt, private_key []byte
 			var loginMsg string
+			var loginOk bool
 			err = result.Scan(&password, &session_token, &salt, &private_key)
 			chk(err)
 
@@ -432,8 +470,10 @@ func handler(w http.ResponseWriter, req *http.Request) {
 				data = map[string]interface{}{
 					"privkey": utils.Encode64(private_key),
 				}
+				loginOk = true
 				loginMsg = "Login correct. Welcome"
 			} else {
+				loginOk = false
 				loginMsg = "Login failed. Invalid credentials for user"
 			}
 
@@ -445,7 +485,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			}
 
 			// Send response
-			response(w, true, loginMsg, data)
+			response(w, loginOk, loginMsg, data)
 			return
 		} else {
 			response(w, false, "User non existent", data)
@@ -461,6 +501,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		modifyCredentials(w, req)
 	case "deleteCred":
 		deleteCredentials(w, req)
+	case "checkCred":
+		checkCredendial(w, req)
 	case "data": // ** obtener datos de usuario
 		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
 		if !ok {
