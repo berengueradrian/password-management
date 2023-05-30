@@ -464,7 +464,6 @@ func ModifyCredential() {
 			}
 		}
 	}
-
 	//}
 
 	// Get credential id
