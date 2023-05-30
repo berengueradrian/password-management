@@ -19,6 +19,55 @@ type File struct {
 	Contents string
 }
 
+func checkAlias(alias string) bool {
+	// Generate random key to encrypt the data with AES
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	chk(err)
+
+	// Prepare data
+	pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+	user_id_c := utils.Encode64(utils.Encrypt(utils.Compress(state.user_id), keycom))
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+
+	// Digital signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte("checkCred" + user_id_c + pkJson_c + keycom_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom))
+
+	// Set request values
+	data := url.Values{}
+	data.Set("cmd", "checkCred")
+	data.Set("pubkey", pkJson_c)
+	data.Set("user_id", user_id_c)
+	data.Set("signature", sign_c)
+	data.Set("aeskey", keycom_c)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp)
+
+	// Finish request
+	r.Body.Close()
+
+	// Check alias
+	for _, i := range resp.Data["alias_array"].([]interface{}) {
+		a := utils.Decompress(utils.Decrypt(utils.Decode64(i.(string)), state.kData))
+		if alias == string(a) {
+			return true
+		}
+	}
+	return false
+}
+
 func CreateCredential() {
 	var site, alias, username, password, path, filename, extension, addFile string
 	var fileContents []byte
@@ -26,8 +75,18 @@ func CreateCredential() {
 
 	// Collect user data
 	fmt.Print("-- Create a credential --\n")
-	fmt.Print("- Alias: ")
-	fmt.Scan(&alias)
+
+	// Check alias existance
+	for {
+		fmt.Print("- Alias: ")
+		fmt.Scan(&alias)
+		if !checkAlias(alias) {
+			break
+		}
+		fmt.Println("ERROR: Alias already used. Try again.")
+	}
+
+	// Collect user data (II)
 	fmt.Print("- Site: ")
 	fmt.Scan(&site)
 	fmt.Print("- Username: ")
@@ -43,8 +102,8 @@ func CreateCredential() {
 			filename = filepath.Base(path)                              // extract file name for saving it as it is
 			extension = strings.TrimPrefix(filepath.Ext(filename), ".") // extract extension to check its validity
 			if extension != "txt" && extension != "der" && extension != "key" && extension != "crt" && extension != "json" && extension != "yaml" && extension != "pem" && extension != "p12" && extension != "pfx" && extension != "ini" {
-				fmt.Println("*Error: Invalid file extension")
-				fmt.Println("*File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
+				fmt.Println("ERROR: Invalid file extension")
+				fmt.Println("ERROR: File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
 			} else {
 				// Read the contents of the file
 				fileContents, err = readFile(path)
@@ -304,7 +363,7 @@ func ListAllCredentials() {
 							fmt.Println("- File downloaded \n")
 							break
 						} else {
-							fmt.Println("*Error: Alias incorrect, try again \n")
+							fmt.Println("ERROR: Alias incorrect, try again \n")
 						}
 					}
 				}
@@ -456,14 +515,14 @@ func ModifyCredential() {
 		newFilename = filepath.Base(path)                              // extract file name for saving it as it is
 		extension = strings.TrimPrefix(filepath.Ext(newFilename), ".") // extract extension to check its validity
 		if extension != "txt" && extension != "der" && extension != "key" && extension != "crt" && extension != "json" && extension != "yaml" && extension != "pem" && extension != "p12" && extension != "pfx" && extension != "ini" {
-			fmt.Println("*Error: Invalid file extension")
-			fmt.Println("*File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
+			fmt.Println("ERROR: Invalid file extension")
+			fmt.Println("ERROR: File must be a .txt, .der, .key, .crt, .json, .yaml, .pem, .p12, .pfx, .ini")
 		} else {
 			// Read the contents of the file
 			fileContents, err = readFile(path)
 
 			if err != nil {
-				fmt.Println("*Error reading the file: ", err)
+				fmt.Println("ERROR: Unsuccesfully reading of file: ", err)
 			} else {
 				break
 			}

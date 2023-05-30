@@ -381,21 +381,30 @@ func checkCredendial(w http.ResponseWriter, req *http.Request) {
 	chk(_error)
 
 	// Verify signature
-	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("cred_id") +
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("user_id") +
 		req.Form.Get("pubkey") + req.Form.Get("aeskey") + utils.GetTime()))
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
-	// Get credential information
-	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), key))
+	// Get user information
+	user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), key))
 
-	// Search credential id
-	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	// Search all alias
+	result, errs := db.Query("SELECT alias from users_data where user_id=?", user_id)
 	chk(errs)
-	if !result.Next() {
-		response(w, false, "Credential not found", nil)
-	} else {
-		response(w, true, "Credential found", nil)
+
+	// Get information
+	var alias_array []string
+	for result.Next() {
+		var alias []byte
+		result.Scan(&alias)
+		alias_array = append(alias_array, utils.Encode64(alias))
 	}
+
+	// Send information
+	data := map[string]interface{}{
+		"alias_array": alias_array,
+	}
+	response(w, true, "Alias retrieved", data)
 }
 
 // Handle the requests
