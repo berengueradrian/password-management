@@ -180,135 +180,140 @@ func ListAllCredentials() {
 	var identifiers []string
 	cred := server.Credential{}
 
-	for _, c := range resp.Data["credentials"].([]interface{}) {
-		// Get data
-		aux := c.(map[string]interface{})
-		cred.Alias = aux["Alias"].(string)
-		cred.Site = aux["Site"].(string)
-		cred.Username = aux["Username"].(string)
-		//cred.Password = aux["Password"].(string)
-		cred.Key = aux["Key"].(string)
-		cred_id := string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData)))
-		//fmt.Println(cred_id)
-		// Decrypted identifiers of credentials
-		cred.Credential_id = cred_id
-		identifiers = append(identifiers, cred.Credential_id)
+	if resp.Data["credentials"] == nil {
+		fmt.Println("No credentials were stored\n")
+	} else {
+		for _, c := range resp.Data["credentials"].([]interface{}) {
+			// Get data
+			aux := c.(map[string]interface{})
+			cred.Alias = aux["Alias"].(string)
+			cred.Site = aux["Site"].(string)
+			cred.Username = aux["Username"].(string)
+			//cred.Password = aux["Password"].(string)
+			cred.Key = aux["Key"].(string)
+			cred_id := string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData)))
+			//fmt.Println(cred_id)
+			// Decrypted identifiers of credentials
+			cred.Credential_id = cred_id
+			identifiers = append(identifiers, cred.Credential_id)
 
-		// Files management
+			// Files management
 
-		/* if cred.Filename != "" {
-			anyFile = true
-			mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
-			files[mapAlias] = File{
-				Name:     cred.Filename,
-				Contents: aux["FileContents"].(string),
-			}
-		} */
+			/* if cred.Filename != "" {
+				anyFile = true
+				mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
+				files[mapAlias] = File{
+					Name:     cred.Filename,
+					Contents: aux["FileContents"].(string),
+				}
+			} */
 
-		// Save credential
-		creds = append(creds, cred)
-	}
-	fmt.Println(identifiers)
-	//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Alias), state.kData))))
-	//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Username), state.kData))))
-	//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Site), state.kData))))
-	//fmt.Println(string(creds[0].Credential_id))
-	//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Key), state.kData))))
+			// Save credential
+			creds = append(creds, cred)
+		}
 
-	// OBTAIN PASSWORDS FOR CREDENTIALS
+		//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Alias), state.kData))))
+		//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Username), state.kData))))
+		//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Site), state.kData))))
+		//fmt.Println(string(creds[0].Credential_id))
+		//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Key), state.kData))))
 
-	// Generate random key to encrypt the data with AES
-	key2 := make([]byte, 32)
-	rand.Read(key2)
-	// Prepare data
-	var identifiers_c []string
-	for _, i := range identifiers {
-		i_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(i)), key2))
-		identifiers_c = append(identifiers_c, i_c)
-	}
-	identifiers_string := utils.Encode64([]byte(strings.Join(identifiers_c, ",")))
-	pubkey2 := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key2))
-	aeskey2 := utils.Encode64(utils.EncryptRSA(utils.Compress(key2), state.srvPubKey))
+		// OBTAIN PASSWORDS FOR CREDENTIALS
 
-	// Digital signature
-	digest2 := utils.HashSHA512([]byte("getAllPass" + identifiers_string + pubkey2 + aeskey2 + utils.GetTime()))
-	sign2 := utils.SignRSA(digest2, state.privKey)
+		// Generate random key to encrypt the data with AES
+		key2 := make([]byte, 32)
+		rand.Read(key2)
+		// Prepare data
+		var identifiers_c []string
+		for _, i := range identifiers {
+			i_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(i)), key2))
+			identifiers_c = append(identifiers_c, i_c)
+		}
+		identifiers_string := utils.Encode64([]byte(strings.Join(identifiers_c, ",")))
+		pubkey2 := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key2))
+		aeskey2 := utils.Encode64(utils.EncryptRSA(utils.Compress(key2), state.srvPubKey))
 
-	// Set request data
-	data2 := url.Values{}
-	data2.Set("cmd", "getAllPass")
-	data2.Set("identifiers", identifiers_string)
-	data2.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign2), key2)))
-	data2.Set("pubkey", pubkey2)
-	data2.Set("aes_key", aeskey2)
+		// Digital signature
+		digest2 := utils.HashSHA512([]byte("getAllPass" + identifiers_string + pubkey2 + aeskey2 + utils.GetTime()))
+		sign2 := utils.SignRSA(digest2, state.privKey)
 
-	// POST request
-	r2, err2 := state.client.PostForm("https://localhost:10443", data2)
-	chk(err2)
+		// Set request data
+		data2 := url.Values{}
+		data2.Set("cmd", "getAllPass")
+		data2.Set("identifiers", identifiers_string)
+		data2.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign2), key2)))
+		data2.Set("pubkey", pubkey2)
+		data2.Set("aes_key", aeskey2)
 
-	// Obtain response from server
-	resp2 := server.Resp{}
-	json.NewDecoder(r2.Body).Decode(&resp2)
+		// POST request
+		r2, err2 := state.client.PostForm("https://localhost:10443", data2)
+		chk(err2)
 
-	// Associate passwords with credentials
-	files := make(map[string]File)
-	if resp2.Data["passwords"] != nil {
-		for _, p := range resp2.Data["passwords"].([]interface{}) {
-			aux := p.(map[string]interface{})
-			for i := range creds {
-				cred_id := utils.Decode64(aux["Credential_id"].(string))
-				if creds[i].Credential_id == string(cred_id) {
-					//fmt.Println("hola")
-					creds[i].Password = aux["Password"].(string)
-					creds[i].Filename = aux["Filename"].(string)
-					if creds[i].Filename != "" {
-						anyFile = true
-						mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[i].Alias), state.kData)))
-						files[mapAlias] = File{
-							Name:     creds[i].Filename,
-							Contents: aux["FileContents"].(string),
+		// Obtain response from server
+		resp2 := server.Resp{}
+		json.NewDecoder(r2.Body).Decode(&resp2)
+
+		// Associate passwords with credentials
+		files := make(map[string]File)
+		if resp2.Data["passwords"] != nil {
+			for _, p := range resp2.Data["passwords"].([]interface{}) {
+				aux := p.(map[string]interface{})
+				for i := range creds {
+					cred_id := utils.Decode64(aux["Credential_id"].(string))
+					if creds[i].Credential_id == string(cred_id) {
+						//fmt.Println("hola")
+						creds[i].Password = aux["Password"].(string)
+						creds[i].Filename = aux["Filename"].(string)
+						if creds[i].Filename != "" {
+							anyFile = true
+							mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[i].Alias), state.kData)))
+							files[mapAlias] = File{
+								Name:     creds[i].Filename,
+								Contents: aux["FileContents"].(string),
+							}
 						}
 					}
 				}
 			}
 		}
-	}
+		r2.Body.Close()
+		//p := resp2.Data["passwords"].([]interface{})[0]
+		//aux := p.(map[string]interface{})
+		//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Key), state.kData))))))
 
-	//p := resp2.Data["passwords"].([]interface{})[0]
-	//aux := p.(map[string]interface{})
-	//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Key), state.kData))))))
-
-	// Show credentials
-	if len(creds) != 0 {
-		fmt.Println("\n" + resp.Msg + "\n")
-		for _, c := range creds {
-			showCredential(c)
-		}
-		if anyFile {
-			download := ""
-			fmt.Print("- Do you want to download any file? (y/n): ")
-			fmt.Scan(&download)
-			if download == "y" {
-				for {
-					alias := ""
-					fmt.Print("- Enter the credential alias of the file to downlaod: ")
-					fmt.Scan(&alias)
-					file, ok := files[alias]
-					if ok {
-						fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
-						fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
-						DownloadFile(fileName, fileContents)
-						fmt.Println("- File downloaded \n")
-						break
-					} else {
-						fmt.Println("*Error: Alias incorrect, try again \n")
+		// Show credentials
+		if len(creds) != 0 {
+			fmt.Println("\n" + resp.Msg + "\n")
+			for _, c := range creds {
+				showCredential(c)
+			}
+			if anyFile {
+				download := ""
+				fmt.Print("- Do you want to download any file? (y/n): ")
+				fmt.Scan(&download)
+				if download == "y" {
+					for {
+						alias := ""
+						fmt.Print("- Enter the credential alias of the file to downlaod: ")
+						fmt.Scan(&alias)
+						file, ok := files[alias]
+						if ok {
+							fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
+							fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
+							DownloadFile(fileName, fileContents)
+							fmt.Println("- File downloaded \n")
+							break
+						} else {
+							fmt.Println("*Error: Alias incorrect, try again \n")
+						}
 					}
 				}
 			}
+		} else {
+			fmt.Println("No credentials were stored\n")
 		}
-	} else {
-		fmt.Println("No credentials were stored\n")
 	}
+
 	// Finish request
 	r.Body.Close()
 

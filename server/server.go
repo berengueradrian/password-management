@@ -9,7 +9,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
@@ -241,7 +240,6 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 		}
 		query_string += "'" + id + "'"
 	}
-	fmt.Println(query_string)
 	query_string += ")"
 	result, err := db.Query(query_string)
 	chk(err)
