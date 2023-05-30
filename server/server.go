@@ -281,7 +281,7 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	// Verify signature
 	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("newAlias") + req.Form.Get("newSite") +
 		req.Form.Get("newUsername") + req.Form.Get("newFilename") + req.Form.Get("aes_key") + req.Form.Get("aeskeycom") +
-		req.Form.Get("cred_id") + req.Form.Get("newId") + req.Form.Get("pubkey") +
+		req.Form.Get("id_alias") + req.Form.Get("id_password") + req.Form.Get("pubkey") +
 		req.Form.Get("newPassword") + utils.GetTime()))
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
@@ -294,18 +294,20 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	c.FileContents = req.Form.Get("newFileContents")
 	c.Password = req.Form.Get("newPassword")
 	c.Key = req.Form.Get("aes_key")
-	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
-	newId := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("newId")), keycom))
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("id_alias")), keycom))
+	cred_pass := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("id_password")), keycom))
 
-	// Search credential id
-	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
+	// Search credential data
+	/* result, errs := db.Query("SELECT aes_key,credential_id from users_data where id=?", cred_id)
 	chk(errs)
-	if !result.Next() {
+	if result.Next() {
+
+	} else {
 		response(w, false, "Credential not found", nil)
-	}
+	} */
 
 	// Check existance of alias
-	result, err_s := db.Query("SELECT alias FROM users_data where id = ?", newId)
+	/* result, err_s := db.Query("SELECT alias FROM users_data where id = ?", cred_id)
 	if err_s != nil {
 		response(w, false, "Unexpected error", nil)
 		return
@@ -313,12 +315,12 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	if result.Next() {
 		response(w, false, "Duplicated alias. Credential not modified", nil)
 		return
-	}
+	} */
 
 	// Update information
-	_, err := db.Query("UPDATE users_data SET alias=?, site=?, username=?, aes_key=?, id=? WHERE id=?", utils.Decode64(c.Alias), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), newId, cred_id)
+	_, err := db.Query("UPDATE users_data SET alias=?, site=?, username=?, aes_key=? WHERE id=?", utils.Decode64(c.Alias), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_id)
 	chk(err)
-	_, errr := db.Query("UPDATE credentials SET password=?, filename=?, filecontents=? WHERE users_data_id=?", utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents), newId)
+	_, errr := db.Query("UPDATE credentials SET password=?, filename=?, filecontents=? WHERE id=?", utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents), cred_pass)
 	chk(errr)
 
 	// Response
@@ -342,21 +344,22 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 
 	// Verify signature
 	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("cred_id") +
-		req.Form.Get("pubkey") + req.Form.Get("aeskeycom") + utils.GetTime()))
+		req.Form.Get("pubkey") + req.Form.Get("aeskeycom") + req.Form.Get("id_password") + utils.GetTime()))
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	// Get credential information
 	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+	pass_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("id_password")), keycom))
 
-	// Search credential id
+	/* // Search credential id
 	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
 	chk(errs)
 	if !result.Next() {
 		response(w, false, "Credential not found", nil)
-	}
+	} */
 
 	// Delete credential
-	_, err := db.Query("DELETE FROM credentials WHERE users_data_id=?", cred_id)
+	_, err := db.Query("DELETE FROM credentials WHERE id=?", pass_id)
 	chk(err)
 	_, errr := db.Query("DELETE FROM users_data WHERE id=?", cred_id)
 	chk(errr)
@@ -389,20 +392,20 @@ func checkCredendial(w http.ResponseWriter, req *http.Request) {
 	user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), key))
 
 	// Search all alias
-	result, errs := db.Query("SELECT alias from users_data where user_id=?", user_id)
+	result, errs := db.Query("SELECT alias,id from users_data where user_id=?", user_id)
 	chk(errs)
 
 	// Get information
-	var alias_array []string
+	alias_map := make(map[string]string)
 	for result.Next() {
-		var alias []byte
-		result.Scan(&alias)
-		alias_array = append(alias_array, utils.Encode64(alias))
+		var alias, id []byte
+		result.Scan(&alias, &id)
+		alias_map[utils.Encode64(id)] = utils.Encode64(alias)
 	}
 
 	// Send information
 	data := map[string]interface{}{
-		"alias_array": alias_array,
+		"alias_map": alias_map,
 	}
 	response(w, true, "Alias retrieved", data)
 }
