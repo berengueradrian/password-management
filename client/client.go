@@ -31,6 +31,7 @@ var state struct {
 	client    *http.Client
 	user_id   []byte
 	kData     []byte
+	auth2     string
 }
 
 // chk checks and exits if there are errors (saves writing in simple programs) *** use it from utils and that's it ***
@@ -229,7 +230,7 @@ func Register() {
 
 	resp := server.Resp{}
 	json.NewDecoder(r.Body).Decode(&resp)
-	fmt.Println(resp.Msg + ".\n")
+	fmt.Println("\n" + resp.Msg + ".\n")
 
 	r.Body.Close() // close the reader of the body
 }
@@ -301,6 +302,8 @@ func Login() {
 		errr := json.Unmarshal(pkJSON, &private_key)
 		chk(errr)
 		state.privKey = private_key
+		// Store in state so the user menu knows to delete or create a 2nd auth factor
+		state.auth2 = resp.Data["totp_auth"].(string)
 		
 		if resp.Data["totp_auth"] == "1" {
 			// Show response
@@ -334,6 +337,7 @@ func Login() {
 					fmt.Println("**Error, incorrect TOTP, you have " + strconv.Itoa(i - 1) + " attempts left. \n")
 				} else {
 					// Show response correct
+					fmt.Println("\n- Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
 					fmt.Println("\n" + resp2.Msg + " Welcome " + userScan + "." + "\n")
 					break
 				}
@@ -348,6 +352,60 @@ func Login() {
 		fmt.Println("**Error logging in")
 		return
 	}
+}
+
+// Remove the 2nd authentication factor
+func Remove2ndFactor() {
+	key := make([]byte, 32)
+	// Set request data
+	data := url.Values{}
+	data.Set("cmd", "remove2ndFactor")  
+	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
+	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))    
+	// POST request
+	response, err := state.client.PostForm("https://localhost:10443", data)
+	defer response.Body.Close()
+	if err != nil {
+		fmt.Println("**Error in the server")
+		return
+	}
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(response.Body).Decode(&resp) // Decode the response to use its fields later on
+	if resp.Ok {
+		state.auth2 = "0"
+		fmt.Println("- Your 2nd factor of authentication was removed\n")
+	} else {
+		fmt.Println("**Error removing your 2nd factor of authentication. Try again. \n")
+	}
+	UserMenu()
+}
+
+// Add 2nd authentication factor
+func Add2ndFactor() {
+	key := make([]byte, 32)
+	// Set request data
+	data := url.Values{}
+	data.Set("cmd", "add2ndFactor")  
+	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
+	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))    
+	// POST request
+	response, err := state.client.PostForm("https://localhost:10443", data)
+	defer response.Body.Close()
+	if err != nil {
+		fmt.Println("**Error in the server\n")
+		return
+	}
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(response.Body).Decode(&resp) // Decode the response to use its fields later on
+	if resp.Ok {
+		state.auth2 = "1"
+		fmt.Println("- Your 2nd factor of authentication was added. Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
+	} else {
+		fmt.Println("**Error adding your 2nd factor of authentication. Try again. \n")
+	}
+	UserMenu()
 }
 
 // Logout from the password management system
@@ -371,8 +429,16 @@ func UserMenu() {
 			"1. See stored credentials\n" +
 			"2. Store a new credential\n" +
 			"3. Modify an existent credential\n" +
-			"4. Delete a credential\n" +
-			"5. Log out\n\n" +
+			"4. Delete a credential\n")
+		if state.auth2 == "1" {
+			os.Stdout.WriteString(
+				"5. Remove 2nd authentication factor \n")
+		} else {
+			os.Stdout.WriteString(
+				"5. Add 2nd authentication factor with TOTP code \n")
+		}
+		os.Stdout.WriteString(
+			"6. Log out\n\n" +
 			"- Introduce an option\n" +
 			"> ")
 		// Read user input
@@ -393,6 +459,13 @@ func UserMenu() {
 				DeleteCredential()
 			case "5":
 				fmt.Println()
+				if state.auth2 == "1" {
+					Remove2ndFactor()
+				} else {
+					Add2ndFactor()
+				}
+			case "6":
+				fmt.Println()
 				Logout()
 				logout = true
 			case "q": // exit
@@ -407,91 +480,3 @@ func UserMenu() {
 		}
 	}
 }
-
-// Run manages the client
-/* func Run() {
-
-	// We create a special client that does not check the validity of the certificates
-	// This is necessary because we use self-signed certificates (for development & testing)
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-
-	// Hash the password with SHA512
-	keyClient := sha512.Sum512([]byte("contraseña del cliente"))
-	keyLogin := keyClient[:32]  // one half for the login (256bits)
-	keyData := keyClient[32:64] // the other half for the data (256bits)
-
-	// We generate a pair of keys (private, public) for the server
-	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
-	chk(err)
-	pkClient.Precompute() // accelerate its use with a pre-calculation
-
-	pkJSON, err := json.Marshal(&pkClient) // encode with JSON
-	chk(err)
-
-	keyPub := pkClient.Public()           // extraemos la clave pública por separado
-	pubJSON, err := json.Marshal(&keyPub) // y codificamos con JSON
-	chk(err)
-
-	// ** ejemplo de registro
-	data := url.Values{}                       // estructura para contener los valores
-	data.Set("cmd", "register")                // comando (string)
-	data.Set("user", "usuario")                // usuario (string)
-	data.Set("pass", utils.Encode64(keyLogin)) // "contraseña" a base64
-
-	// comprimimos y codificamos la clave pública
-	data.Set("pubkey", utils.Encode64(utils.Compress(pubJSON)))
-
-	// comprimimos, ciframos y codificamos la clave privada
-	data.Set("prikey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData)))
-
-	r, err := client.PostForm("https://localhost:10443", data) // enviamos por POST
-	chk(err)
-	io.Copy(os.Stdout, r.Body) // mostramos el cuerpo de la respuesta (es un reader)
-	r.Body.Close()             // hay que cerrar el reader del body
-	fmt.Println()
-
-	// ** ejemplo de login
-	data = url.Values{}
-	data.Set("cmd", "login")                                  // comando (string)
-	data.Set("user", "usuario")                               // usuario (string)
-	data.Set("pass", utils.Encode64(keyLogin))                // contraseña (a base64 porque es []byte)
-	r, err = client.PostForm("https://localhost:10443", data) // enviamos por POST
-	chk(err)
-	resp := server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // decodificamos la respuesta para utilizar sus campos más adelante
-	fmt.Println(resp)                     // imprimimos por pantalla
-	r.Body.Close()                        // hay que cerrar el reader del body
-
-	// ** ejemplo de data sin utilizar el token correcto
-	badToken := make([]byte, 16)
-	_, err = rand.Read(badToken)
-	chk(err)
-
-	data = url.Values{}
-	data.Set("cmd", "data")                     // comando (string)
-	data.Set("user", "usuario")                 // usuario (string)
-	data.Set("pass", utils.Encode64(keyLogin))  // contraseña (a base64 porque es []byte)
-	data.Set("token", utils.Encode64(badToken)) // token incorrecto
-	r, err = client.PostForm("https://localhost:10443", data)
-	chk(err)
-	io.Copy(os.Stdout, r.Body) // mostramos el cuerpo de la respuesta (es un reader)
-	r.Body.Close()             // hay que cerrar el reader del body
-	fmt.Println()
-
-	// ** ejemplo de data con token correcto
-	data = url.Values{}
-	data.Set("cmd", "data")                    // comando (string)
-	data.Set("user", "usuario")                // usuario (string)
-	data.Set("pass", utils.Encode64(keyLogin)) // contraseña (a base64 porque es []byte)
-	//data.Set("token", utils.Encode64(resp.Data)) // token correcto
-	r, err = client.PostForm("https://localhost:10443", data)
-	chk(err)
-	io.Copy(os.Stdout, r.Body) // mostramos el cuerpo de la respuesta (es un reader)
-	r.Body.Close()             // hay que cerrar el reader del body
-	fmt.Println()
-
-}
-*/
