@@ -1,5 +1,5 @@
 /*
-	Client
+Client
 */
 package client
 
@@ -21,6 +21,7 @@ import (
 	"password-management/utils"
 	"strconv"
 	"time"
+
 	"github.com/sethvargo/go-password/password"
 )
 
@@ -129,13 +130,13 @@ func randomPasswordGenerator() string {
 
 // Download the QR code for the user
 func saveQRCodeToFile(qrCodeData []byte) error {
-    err := ioutil.WriteFile("QR.png", qrCodeData, 0644)
-    return err
+	err := ioutil.WriteFile("QR.png", qrCodeData, 0644)
+	return err
 }
 
 // User's registration in the password management system
 func Register() {
-	userScan, createOwn, secondFactor:= "", "", ""
+	userScan, createOwn, secondFactor := "", "", ""
 	passScan, passScan2 := "", ""
 
 	// Initial prompt for register form
@@ -328,7 +329,7 @@ func Login() {
 		state.privKey = private_key
 		// Store in state so the user menu knows to delete or create a 2nd auth factor
 		state.auth2 = resp.Data["totp_auth"].(string)
-		
+
 		if resp.Data["totp_auth"] == "1" {
 			// Show response
 			fmt.Println("\n Correct credentials. \n")
@@ -339,14 +340,14 @@ func Login() {
 				fmt.Scan(&totpCode)
 				// Data for validating the totp code
 				data_2nd := url.Values{}
-				data_2nd.Set("cmd", "validateTOTP")  
+				data_2nd.Set("cmd", "validateTOTP")
 				data_2nd.Set("user", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key_2nd)))
 				data_2nd.Set("totp_code", utils.Encode64(utils.Encrypt(utils.Compress([]byte(totpCode)), key_2nd)))
 				data_2nd.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key_2nd), state.srvPubKey)))
 				// POST request
 				response, err := client.PostForm("https://localhost:10443", data_2nd)
 				defer response.Body.Close()
-				if err != nil{
+				if err != nil {
 					fmt.Println("**Error in the server")
 					return
 				}
@@ -358,7 +359,7 @@ func Login() {
 						fmt.Println("**Error, incorrect TOTP. You have exceeded the attempts allowed. Try again later. \n")
 						return
 					}
-					fmt.Println("**Error, incorrect TOTP, you have " + strconv.Itoa(i - 1) + " attempts left. \n")
+					fmt.Println("**Error, incorrect TOTP, you have " + strconv.Itoa(i-1) + " attempts left. \n")
 				} else {
 					// Show response correct
 					fmt.Println("\n- Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
@@ -383,9 +384,9 @@ func Remove2ndFactor() {
 	key := make([]byte, 32)
 	// Set request data
 	data := url.Values{}
-	data.Set("cmd", "remove2ndFactor")  
+	data.Set("cmd", "remove2ndFactor")
 	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
-	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))    
+	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
 	// POST request
 	response, err := state.client.PostForm("https://localhost:10443", data)
 	defer response.Body.Close()
@@ -402,7 +403,7 @@ func Remove2ndFactor() {
 	} else {
 		fmt.Println("**Error removing your 2nd factor of authentication. Try again. \n")
 	}
-	UserMenu()
+	//UserMenu()
 }
 
 // Add 2nd authentication factor
@@ -410,9 +411,9 @@ func Add2ndFactor() {
 	key := make([]byte, 32)
 	// Set request data
 	data := url.Values{}
-	data.Set("cmd", "add2ndFactor")  
+	data.Set("cmd", "add2ndFactor")
 	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
-	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))    
+	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
 	// POST request
 	response, err := state.client.PostForm("https://localhost:10443", data)
 	defer response.Body.Close()
@@ -446,7 +447,7 @@ func Add2ndFactor() {
 	} else {
 		fmt.Println("**Error adding your 2nd factor of authentication. Try again. \n")
 	}
-	UserMenu()
+	//UserMenu()
 }
 
 // Logout from the password management system
@@ -463,7 +464,7 @@ func Logout() {
 
 func UserMenu() {
 	logout := false
-	for{
+	for {
 		// Prompt menu
 		os.Stdout.WriteString("--- User Menu ---\n" +
 			"- Choose an action to perform\n\n" +
@@ -480,8 +481,8 @@ func UserMenu() {
 		}
 		os.Stdout.WriteString(
 			"6. Log out\n\n" +
-			"- Introduce an option\n" +
-			"> ")
+				"- Introduce an option\n" +
+				"> ")
 		// Read user input
 		command := bufio.NewScanner(os.Stdin)
 		if command.Scan() {
