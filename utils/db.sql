@@ -14,6 +14,19 @@ create table users
         primary key (username)
 );
 
+-- credentials table stored encrypted (disk encryption, db encryption...)
+-- and with the user's data also encrypted with the user's keyData
+-- it will store all the credentials data included the password
+create table credentials
+(
+    id varbinary(256) not null,
+    password varbinary(256) not null,
+    filename varbinary(256) null,
+    filecontents varbinary(3072) null,
+    constraint id
+        primary key (id)
+);
+
 -- users_data table stored cyphered with the user's keyData (uknown on the server)
 -- it will store the credentials data except the password for the user to be able
 -- it will also store the AES key that encrypted the credentials data so that only the user is able to decrypt it
@@ -26,26 +39,12 @@ create table users_data
     aes_key  varbinary(256) not null,
     user_id  varbinary(256) not null,
     alias varbinary(256) null,
+    credential_id varbinary(256) null,
     constraint id
         primary key (id),
     constraint user_id
         foreign key (user_id) references users (username)
             on delete cascade
-);
-
--- credentials table stored encrypted (disk encryption, db encryption...)
--- and with the user's data also encrypted with the user's keyData
--- it will store all the credentials data included the password
-create table credentials
-(
-    users_data_id varbinary(256) not null,
-    password varbinary(256) not null,
-    filename varbinary(256) null,
-    filecontents varbinary(3072) null,
-    constraint users_data_id
-        primary key (users_data_id),
-    constraint users_data_id
-        foreign key (users_data_id) references users_data (id) on update cascade
 );
 
 -- files table where the files associated to the credentials are stored
