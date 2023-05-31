@@ -235,15 +235,23 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 	} */
 
 	// Get list of passwords
-	query_string := "SELECT id,password,filename,filecontents FROM credentials WHERE id IN ("
+	placeholders := make([]string, len(identifiers_array))
+	values := make([]interface{}, len(identifiers_array))
 	for i, id := range identifiers_array {
+		placeholders[i] = "?"
+		values[i] = id
+	}
+	query_string := "SELECT id, password, filename, filecontents FROM credentials WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+
+	/* query_string := "SELECT id,password,filename,filecontents FROM credentials WHERE id IN ("
+	for i, _ := range identifiers_array {
 		if i > 0 {
 			query_string += ","
 		}
-		query_string += "'" + id + "'"
+		query_string += "'" + "?" + "'"
 	}
-	query_string += ")"
-	result, err := db.Query(query_string)
+	query_string += ")" */
+	result, err := db.Query(query_string, values...)
 	chk(err)
 
 	var creds []Credential
@@ -456,9 +464,9 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		insert, err := db.Query("INSERT INTO users (username, password, salt, session_token, last_seen, public_key, private_key) VALUES (?, ?, ?, ?, ?, ?, ?)", u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"])
 		chk(err)             // check for errors
 		defer insert.Close() // close the insert statement
-		data := map[string]interface{}{
+		/* data := map[string]interface{}{
 			"username": u.Name,
-		}
+		} */
 		response(w, true, "User registered", nil)
 
 	case "login":

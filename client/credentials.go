@@ -340,14 +340,14 @@ func ListAllCredentials() {
 				if download == "y" {
 					for {
 						alias := ""
-						fmt.Print("- Enter the credential alias of the file to downlaod: ")
+						fmt.Print("- Enter the credential alias of the file to download: ")
 						fmt.Scan(&alias)
 						file, ok := files[alias]
 						if ok {
 							fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
 							fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
 							DownloadFile(fileName, fileContents)
-							fmt.Println("- File downloaded \n")
+							fmt.Println("\nFile downloaded successfully\n")
 							break
 						} else {
 							fmt.Println("ERROR: Alias incorrect, try again \n")
