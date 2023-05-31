@@ -14,7 +14,7 @@ import (
 	"password-management/utils"
 	"strings"
 	"fmt"
-	"os"
+	//"os"
 	"time"
 	"github.com/skip2/go-qrcode"
 	"github.com/xlzd/gotp"
@@ -416,28 +416,27 @@ func checkCredendial(w http.ResponseWriter, req *http.Request) {
 }
 
 // generates a QR code based on the secret key from the user
-func generateQRCode(secret string) error {
+func generateQRCode(secret string) ([]byte, error) {
 	keyUri := fmt.Sprintf("otpauth://totp?secret=%s", secret)
-	//qr, err := qrcode.New(keyUri, qrcode.Highest)
 	qrCode, err := qrcode.Encode(keyUri, qrcode.Highest, 256)
 	if err != nil {
-		return err
-	}
-	//qr.DisableBorder = true
-
-	file, err := os.Create("QR.png")
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	//err = qr.Write(file)
-	_, err = file.Write(qrCode)
-	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return qrCode, nil
+
+	// file, err := os.Create("QR.png")
+	// if err != nil {
+	// 	return err
+	// }
+	// defer file.Close()
+
+	// _, err = file.Write(qrCode)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// return nil
 }
 
 // generates a TOTP code based on the secret key from the user
@@ -489,8 +488,19 @@ func add2ndFactor(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		response(w, false, "Error updating the user", nil)
 	} else {
-		generateQRCode(totpKey)
-		response(w, true, "2nd factor added", nil)
+		code, err := generateQRCode(totpKey)
+		if err != nil {
+			return
+		}
+		code, errGenerating := generateQRCode(totpKey)
+		if errGenerating != nil {
+			response(w, false, "**Error generating QR code", nil)
+			return
+		}
+		data := map[string]interface{}{
+			"qr_code": code,
+		}
+		response(w, true, "2nd factor added", data)
 	}
 }
 
@@ -586,7 +596,12 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			}
 			// Generate QR code if the user chose the 2nd auth factor
 			if second == "1" {
-				generateQRCode(totpKey)
+				code, err := generateQRCode(totpKey)
+				if err != nil {
+					response(w, false, "**Error generating QR code", nil)
+					return
+				}
+				data["qr_code"] = code
 			}
 			response(w, true, "User registered", data)
 
@@ -622,7 +637,6 @@ func handler(w http.ResponseWriter, req *http.Request) {
 					response(w, false, "Unexpected server error", nil)
 					return
 				}
-				fmt.Println(state.privKey)
 				totpAuth := utils.Decompress(utils.DecryptRSA(totp_key, state.privKey))
 				var secondFactor string
 				if string(totpAuth) == "" || string(totpAuth) == "0" || totpAuth == nil{

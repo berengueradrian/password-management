@@ -127,6 +127,12 @@ func randomPasswordGenerator() string {
 	return pass
 }
 
+// Download the QR code for the user
+func saveQRCodeToFile(qrCodeData []byte) error {
+    err := ioutil.WriteFile("QR.png", qrCodeData, 0644)
+    return err
+}
+
 // User's registration in the password management system
 func Register() {
 	userScan, createOwn, secondFactor:= "", "", ""
@@ -230,6 +236,24 @@ func Register() {
 
 	resp := server.Resp{}
 	json.NewDecoder(r.Body).Decode(&resp)
+
+	// Get the QR code and download it for the user
+	qrCodeStr, ok := resp.Data["qr_code"].(string)
+	if !ok {
+		fmt.Println("Error: QR code data is invalid")
+		return
+	}
+	qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
+	if err != nil {
+		fmt.Println("Error decoding QR code data:", err)
+		return
+	}
+	err = saveQRCodeToFile(qrCodeData)
+	if err != nil {
+		fmt.Println("Error saving QR code:", err)
+	} else {
+		fmt.Println("QR code saved successfully.")
+	}
 	fmt.Println("\n" + resp.Msg + ".\n")
 
 	r.Body.Close() // close the reader of the body
@@ -400,6 +424,23 @@ func Add2ndFactor() {
 	resp := server.Resp{}
 	json.NewDecoder(response.Body).Decode(&resp) // Decode the response to use its fields later on
 	if resp.Ok {
+		// Get the QR code and download it for the user
+		qrCodeStr, ok := resp.Data["qr_code"].(string)
+		if !ok {
+			fmt.Println("Error: QR code data is invalid")
+			return
+		}
+		qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
+		if err != nil {
+			fmt.Println("Error decoding QR code data:", err)
+			return
+		}
+		err = saveQRCodeToFile(qrCodeData)
+		if err != nil {
+			fmt.Println("Error saving QR code:", err)
+		} else {
+			fmt.Println("QR code saved successfully.")
+		}
 		state.auth2 = "1"
 		fmt.Println("- Your 2nd factor of authentication was added. Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
 	} else {
