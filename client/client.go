@@ -1,5 +1,5 @@
 /*
-Client
+	Client
 */
 package client
 
@@ -13,7 +13,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	//"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -22,7 +21,6 @@ import (
 	"password-management/utils"
 	"strconv"
 	"time"
-
 	"github.com/sethvargo/go-password/password"
 )
 
@@ -61,104 +59,6 @@ func obtainPubKey(client *http.Client) {
 		fmt.Println("Error: could not get the server's public key, possible Server Error")
 		os.Exit(0)
 	}
-}
-
-// User's registration in the password management system
-func Register() {
-	userScan, createOwn := "", ""
-	passScan, passScan2 := "", ""
-
-	// Initial prompt for register form
-	os.Stdout.WriteString("-- Register --\n")
-	os.Stdout.WriteString("- Username: ")
-	// Read username input
-	fmt.Scan(&userScan)
-	os.Stdout.WriteString("\n")
-	os.Stdout.WriteString("- Do you want a randomly generated password? (y/n)\n")
-	os.Stdout.WriteString("> ")
-	fmt.Scan(&createOwn)
-
-	// If the user types y or Y, he will be asked to create his own password
-	if createOwn == "y" || createOwn == "Y" {
-		passScan = randomPasswordGenerator() // TO-DO: generate a random password and print it correctly and doing the corresponding prompts
-	} else { // If the user types n or another character, a random password will be generated
-		// Loop until the user types two equal passwords
-		for {
-			os.Stdout.WriteString("- Password for " + userScan + ": ")
-			fmt.Scan(&passScan)
-			os.Stdout.WriteString("- Repeat the password: ")
-			fmt.Scan(&passScan2)
-			fmt.Println()
-			// Check if the passwords match
-			if passScan != passScan2 {
-				os.Stdout.WriteString("*Error: Passwords do not match, try again\n")
-			} else {
-				break
-			}
-		}
-	}
-
-	// We create a special client that does not check the validity of the certificates
-	// This is necessary because we use self-signed certificates (for development & testing)
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-
-	// **Request to get the server's public key (to encrypt the registration data and add an extra layer of security)
-	obtainPubKey(client)
-
-	//  Hash the password with SHA512
-	keyClient := sha512.Sum512([]byte(passScan))
-	keyLogin := keyClient[:32]  // one half for the login (256bits)
-	keyData := keyClient[32:64] // the other half for the data (256bits)
-
-	// Generate a pair of keys (private, public) for the server
-	pkClient, err := rsa.GenerateKey(rand.Reader, 2048) // 2048 is significantly faster than 4096 bits, with a better performance, better to use higher values
-	chk(err)
-	pkClient.Precompute() // accelerate its use with a pre-calculation
-
-	pkJSON, err := json.Marshal(&pkClient) // encode with JSON
-	chk(err)                               // check for errors
-
-	keyPub := pkClient.Public()           // extract the public key separately
-	pubJSON, err := json.Marshal(&keyPub) // encode with JSON
-	chk(err)
-
-	key := make([]byte, 32) // random key to encrypt the data with AES
-	rand.Read(key)
-
-	// **Registration, user's data
-	data := url.Values{}        // structure to contain the values
-	data.Set("cmd", "register") // command (string)
-	// Username
-	data.Set("username", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key)))
-	// Password
-	data.Set("password", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(keyLogin)), key)))
-	// Session token
-	sessionToken := make([]byte, 16) // generate a random token
-	_, err = rand.Read(sessionToken) // check if it is random
-	chk(err)
-	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(sessionToken)), key)))
-	// Last seen date
-	date := time.Now().Format("2006-01-02 15:04:05")                                        // get the current date
-	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(date)), key))) // last seen date for session management
-	// Public key
-	data.Set("pubkey", utils.Encode64(utils.Encrypt(utils.Compress(pubJSON), key)))
-	// Private key
-	data.Set("privkey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData))) // in an actual client-server app, this would be stored in the client's local storage
-	// AES key
-	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
-
-	r, err := client.PostForm("https://localhost:10443", data) // send a POST request
-	chk(err)
-	//io.Copy(os.Stdout, r.Body) // show the body of the response (it is a reader)
-	resp := server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp)
-	fmt.Println(resp.Msg + ".\n")
-
-	//fmt.Println()
-	r.Body.Close() // close the reader of the body
 }
 
 // randomPasswordGenerator generates a random password based on entered parameters by the user
@@ -226,17 +126,125 @@ func randomPasswordGenerator() string {
 	return pass
 }
 
+// User's registration in the password management system
+func Register() {
+	userScan, createOwn, secondFactor:= "", "", ""
+	passScan, passScan2 := "", ""
+
+	// Initial prompt for register form
+	os.Stdout.WriteString("-- Register --\n")
+	os.Stdout.WriteString("- Username: ")
+	// Read username input
+	fmt.Scan(&userScan)
+	os.Stdout.WriteString("\n")
+	os.Stdout.WriteString("- Do you want a randomly generated password? (y/n)\n")
+	os.Stdout.WriteString("> ")
+	fmt.Scan(&createOwn)
+
+	// If the user types y or Y, he will be asked to create his own password
+	if createOwn == "y" || createOwn == "Y" {
+		passScan = randomPasswordGenerator() // TO-DO: generate a random password and print it correctly and doing the corresponding prompts
+	} else { // If the user types n or another character, a random password will be generated
+		// Loop until the user types two equal passwords
+		for {
+			os.Stdout.WriteString("- Password for " + userScan + ": ")
+			fmt.Scan(&passScan)
+			os.Stdout.WriteString("- Repeat the password: ")
+			fmt.Scan(&passScan2)
+			fmt.Println()
+			// Check if the passwords match
+			if passScan != passScan2 {
+				os.Stdout.WriteString("*Error: Passwords do not match, try again\n")
+			} else {
+				break
+			}
+		}
+	}
+
+	// Ask the user if he wants to add a second authentication factor
+	os.Stdout.WriteString("- Do you want to add a second authentication factor? You can also add it later. (y/n)\n")
+	os.Stdout.WriteString("> ")
+	fmt.Scan(&secondFactor)
+
+	// We create a special client that does not check the validity of the certificates
+	// This is necessary because we use self-signed certificates (for development & testing)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+
+	// **Request to get the server's public key (to encrypt the registration data and add an extra layer of security)
+	obtainPubKey(client)
+
+	//  Hash the password with SHA512
+	keyClient := sha512.Sum512([]byte(passScan))
+	keyLogin := keyClient[:32]  // one half for the login (256bits)
+	keyData := keyClient[32:64] // the other half for the data (256bits)
+
+	// Generate a pair of keys (private, public) for the server
+	pkClient, err := rsa.GenerateKey(rand.Reader, 2048) // 2048 is significantly faster than 4096 bits, with a better performance, better to use higher values
+	chk(err)
+	pkClient.Precompute() // accelerate its use with a pre-calculation
+
+	pkJSON, err := json.Marshal(&pkClient) // encode with JSON
+	chk(err)                               // check for errors
+
+	keyPub := pkClient.Public()           // extract the public key separately
+	pubJSON, err := json.Marshal(&keyPub) // encode with JSON
+	chk(err)
+
+	key := make([]byte, 32) // random key to encrypt the data with AES
+	rand.Read(key)
+
+	// **Registration, user's data
+	data := url.Values{}        // structure to contain the values
+	data.Set("cmd", "register") // command (string)
+	// Username
+	data.Set("username", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key)))
+	// Password
+	data.Set("password", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(keyLogin)), key)))
+	// Session token
+	sessionToken := make([]byte, 16) // generate a random token
+	_, err = rand.Read(sessionToken) // check if it is random
+	chk(err)
+	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(sessionToken)), key)))
+	// Last seen date
+	date := time.Now().Format("2006-01-02 15:04:05")                                        // get the current date
+	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(date)), key))) // last seen date for session management
+	// Public key
+	data.Set("pubkey", utils.Encode64(utils.Encrypt(utils.Compress(pubJSON), key)))
+	// Private key
+	data.Set("privkey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData))) // in an actual client-server app, this would be stored in the client's local storage
+	// AES key
+	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
+	// 2nd authentication factor
+	if secondFactor == "y" || secondFactor == "Y" {
+		data.Set("second_factor", "1")
+	} else {
+		data.Set("second_factor", "0")
+	}
+
+	r, err := client.PostForm("https://localhost:10443", data) // send a POST request
+	chk(err)
+
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp)
+	fmt.Println(resp.Msg + ".\n")
+
+	r.Body.Close() // close the reader of the body
+}
+
 // User's login in the password management system
 func Login() {
-	var userScan, passScan string
+	var userScan, passScan, totpCode string
 
 	// Initial prompt for log in form
 	fmt.Print("-- Log in --\n")
-	fmt.Print("- User name: ")
 	// Read username input
+	fmt.Print("- User name: ")
 	fmt.Scan(&userScan)
-	os.Stdout.WriteString("- Password for '" + userScan + "': ")
 	// Read password input
+	os.Stdout.WriteString("- Password for '" + userScan + "': ")
 	fmt.Scan(&passScan)
 
 	// We create a special client that does not check the validity of the certificates
@@ -276,34 +284,70 @@ func Login() {
 
 	// POST request
 	r, err := client.PostForm("https://localhost:10443", data)
-	chk(err)
+	defer r.Body.Close()
+	if err != nil {
+		fmt.Println("**Error logging in")
+		return
+	}
 
 	// Obtain response from server
 	resp := server.Resp{}
 	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
 
-	// Save private key
 	if resp.Ok {
+		// Obtain private key and server's public key
 		pkJSON := utils.Decompress(utils.Decrypt(utils.Decode64(resp.Data["privkey"].(string)), keyData))
 		var private_key *rsa.PrivateKey
 		errr := json.Unmarshal(pkJSON, &private_key)
 		chk(errr)
 		state.privKey = private_key
-	}
+		
+		if resp.Data["totp_auth"] == "1" {
+			// Show response
+			fmt.Println("\n Correct credentials. \n")
+			for i := 3; i >= 1; i-- {
+				key_2nd := make([]byte, 32)
+				rand.Read(key_2nd)
+				fmt.Print("- Introduce your TOTP code: ")
+				fmt.Scan(&totpCode)
+				// Data for validating the totp code
+				data_2nd := url.Values{}
+				data_2nd.Set("cmd", "validateTOTP")  
+				data_2nd.Set("user", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key_2nd)))
+				data_2nd.Set("totp_code", utils.Encode64(utils.Encrypt(utils.Compress([]byte(totpCode)), key_2nd)))
+				data_2nd.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key_2nd), state.srvPubKey)))
+				// POST request
+				response, err := client.PostForm("https://localhost:10443", data_2nd)
+				defer response.Body.Close()
+				if err != nil{
+					fmt.Println("**Error in the server")
+					return
+				}
+				// Obtain response from server
+				resp2 := server.Resp{}
+				json.NewDecoder(response.Body).Decode(&resp2) // Decode the response to use its fields later on
+				if !resp2.Ok {
+					if i == 1 {
+						fmt.Println("**Error, incorrect TOTP. You have exceeded the attempts allowed. Try again later. \n")
+						return
+					}
+					fmt.Println("**Error, incorrect TOTP, you have " + strconv.Itoa(i - 1) + " attempts left. \n")
+				} else {
+					// Show response correct
+					fmt.Println("\n" + resp2.Msg + " Welcome " + userScan + "." + "\n")
+					break
+				}
+			}
+		} else {
+			fmt.Println("\n" + resp.Msg + " Welcome " + userScan + "." + "\n")
+		}
 
-	// Show response
-	fmt.Println("\n" + resp.Msg + " " + userScan + "." + "\n")
-
-	// Finish request
-	r.Body.Close()
-
-	// Save user identifier in state if the log in process was correct
-	if resp.Ok {
 		state.user_id = utils.HashSHA512([]byte(userScan))
-		// Enter to the user menu
 		UserMenu()
+	} else {
+		fmt.Println("**Error logging in")
+		return
 	}
-
 }
 
 // Logout from the password management system
