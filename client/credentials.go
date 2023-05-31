@@ -1,3 +1,6 @@
+/*
+	Credentials
+*/
 package client
 
 import (

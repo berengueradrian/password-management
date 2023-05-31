@@ -1,5 +1,12 @@
+--
+    -- SQL database structure
+--
+
+-- create table
 create database passmanager;
+-- use table
 use passmanager;
+
 -- users table where the login in the password management app is stored
 create table users
 (
@@ -10,6 +17,7 @@ create table users
     last_seen     varbinary(256) null,
     public_key    varbinary(512) not null,
     private_key   varbinary(2048) not null,
+    totp_key      varbinary(2048) null,
     constraint username
         primary key (username)
 );
@@ -46,17 +54,3 @@ create table users_data
         foreign key (user_id) references users (username)
             on delete cascade
 );
-
--- files table where the files associated to the credentials are stored
--- stored encrypted (disk encryption, db encryption...)
--- not needed for now
--- create table files
--- (
---     id            int    not null,
---     credential_id varbinary(256)    not null,
---     path          varbinary(256) not null,
---     constraint id
---         primary key (id),
---     constraint credential_id
---         foreign key (credential_id) references credentials (users_data_id)
--- );

@@ -1,23 +1,16 @@
 /*
-Este programa demuestra una arquitectura cliente servidor sencilla utilizando HTTPS. También demuestra los siguientes conceptos:
-- Organización del código en paquetes
-- Esquema básico de autentificación (derivación de claves a partir de la contraseña, autentificación en el servidor...)
-- Cifrado con AES-CTR, compresión, encoding (JSON, base64), etc.
-
-Puede servir como inspiración, pero carece mucha de la funcionalidad necesaria para la práctica.
-Entre otras muchas, algunas limitaciones (por sencillez):
-- Se utiliza scrypt para gestionar las contraseñas en el servidor. Argon2 es mejor opción.
-- Se utiliza un token sencillo a modo de sesión/autentificación, se puede extender o hacer también con cookies (sobre HTTPS), con JWT, con firma digital, etc.
-- El cliente ni es interactivo ni muy útil, es una mera demostración.
+Dependencies:
+- go get github.com/skip2/go-qrcode
+- go get github.com/xlzd/gotp
 
 Compilation:
-go build
+- go build
 
 Start the server:
-sdshttp srv
+- go run main.go -s
 
 Start the client:
-sdshttp cli
+- go run main.go
 
 OpenSSL command to generate the certificate/key pair for localhost:
 (see https://letsencrypt.org/docs/certificates-for-localhost/)

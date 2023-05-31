@@ -9,11 +9,18 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
 	"strings"
-	//"fmt"
+
+	//"os"
+	"encoding/base32"
+	"time"
+
+	"github.com/skip2/go-qrcode"
+	"github.com/xlzd/gotp"
 )
 
 // Context of the server to maintain the state between requests
@@ -413,6 +420,114 @@ func checkCredendial(w http.ResponseWriter, req *http.Request) {
 	response(w, true, "Alias retrieved", data)
 }
 
+// generates a QR code based on the secret key from the user
+func generateQRCode(secret string) ([]byte, error) {
+	keyUri := fmt.Sprintf("otpauth://totp?secret=%s", secret)
+	qrCode, err := qrcode.Encode(keyUri, qrcode.Highest, 256)
+	if err != nil {
+		return nil, err
+	}
+
+	return qrCode, nil
+
+	// file, err := os.Create("QR.png")
+	// if err != nil {
+	// 	return err
+	// }
+	// defer file.Close()
+
+	// _, err = file.Write(qrCode)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// return nil
+}
+
+// generates a TOTP code based on the secret key from the user
+func generateTOTP(secret string) string {
+	totp := gotp.NewDefaultTOTP(secret)
+	otp := totp.Now()
+	return otp
+}
+
+// validates a totp based on the user's secret key and actual time
+func validateTOTP(secret, code string) bool {
+	totp := gotp.NewDefaultTOTP(secret)
+	valid := totp.Verify(code, time.Now().Unix())
+	return valid
+}
+
+func generateSecretKey() (string, error) {
+	// Generate a random byte slice of 20 bytes
+	secretBytes := make([]byte, 20)
+	_, err := rand.Read(secretBytes)
+	if err != nil {
+		return "", err
+	}
+
+	// Encode the random byte slice as a base32 string
+	secretKey := base32.StdEncoding.EncodeToString(secretBytes)
+
+	return secretKey, nil
+}
+
+// Adds a second authentication factor to a user
+func add2ndFactor(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get the AES key
+	aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+	// Get the username
+	username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
+
+	totpKey, err := generateSecretKey()
+	totp_key := utils.EncryptRSA(utils.Compress([]byte(totpKey)), &state.privKey.PublicKey) // totp key
+	if err != nil {
+		response(w, false, "**Error generating TOTP code", nil)
+		return
+	}
+	_, err = db.Query("UPDATE users SET totp_key=? WHERE username=?", totp_key, username)
+	if err != nil {
+		response(w, false, "Error updating the user", nil)
+	} else {
+		code, err := generateQRCode(totpKey)
+		if err != nil {
+			return
+		}
+		code, errGenerating := generateQRCode(totpKey)
+		if errGenerating != nil {
+			response(w, false, "**Error generating QR code", nil)
+			return
+		}
+		data := map[string]interface{}{
+			"qr_code": code,
+		}
+		response(w, true, "2nd factor added", data)
+	}
+}
+
+// Removes the 2nd authentication factor of a user
+func remove2ndFactor(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get the AES key
+	aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+	// Get the username
+	username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
+	var totpNil string
+	_, err := db.Query("UPDATE users SET totp_key=? WHERE username=?", utils.EncryptRSA(utils.Compress([]byte(totpNil)), &state.privKey.PublicKey), username)
+	if err != nil {
+		response(w, false, "Error updating the user", nil)
+	} else {
+		response(w, true, "2nd factor removed", nil)
+	}
+}
+
 // Handle the requests
 func handler(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()                              // need to parse the form
@@ -427,7 +542,6 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		response(w, true, "Server's public key", data)
 
 	case "register": // ** registration
-
 		// Open db connection
 		db := utils.ConnectDB()
 		defer db.Close() // close the db connection by the end of the function
@@ -459,19 +573,45 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		u.Data = make(map[string]interface{})                                                       // reserve space for additional data
 		u.Data["public"] = utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey)            // public key
 		u.Data["private"] = utils.Decode64(req.Form.Get("privkey"))                                 // private key, encrypted with keyData
+		second := req.Form.Get("second_factor")                                                     // second factor
+		var totpKey string
+		// Check if the user has chosen a second factor
+		if second == "1" {
+			var err error
+			totpKey, err = generateSecretKey()
+			u.Data["totp_key"] = utils.EncryptRSA(utils.Compress([]byte(totpKey)), &state.privKey.PublicKey) // totp key
+			if err != nil {
+				response(w, false, "**Error generating TOTP code", nil)
+				return
+			}
+		} else {
+			u.Data["totp_key"] = utils.EncryptRSA(utils.Compress([]byte(totpKey)), &state.privKey.PublicKey) // totp key
+		}
 
 		// Insert data into the db
-		insert, err := db.Query("INSERT INTO users (username, password, salt, session_token, last_seen, public_key, private_key) VALUES (?, ?, ?, ?, ?, ?, ?)", u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"])
-		chk(err)             // check for errors
+		insert, err := db.Query("INSERT INTO users (username, password, salt, session_token, last_seen, public_key, private_key, totp_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", u.Name, u.Password, u.Salt, u.SessionToken, u.Seen, u.Data["public"], u.Data["private"], u.Data["totp_key"])
+		if err != nil {
+			fmt.Println(err)
+			response(w, false, "**Error registering user", nil)
+			return
+		}
 		defer insert.Close() // close the insert statement
-		/* data := map[string]interface{}{
+		data := map[string]interface{}{
 			"username": u.Name,
-		} */
-		response(w, true, "User registered", nil)
+		}
+		// Generate QR code if the user chose the 2nd auth factor
+		if second == "1" {
+			code, err := generateQRCode(totpKey)
+			if err != nil {
+				response(w, false, "**Error generating QR code", nil)
+				return
+			}
+			data["qr_code"] = code
+		}
+		response(w, true, "User registered", data)
 
 	case "login":
-
-		// Decypher AES Key
+		// Decrypt AES Key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
 
 		// Get user data
@@ -484,7 +624,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		// Return database information
 		db := utils.ConnectDB()
 		defer db.Close()
-		result, err := db.Query("SELECT password,session_token,salt,private_key FROM users where username = ?", u.Name)
+		result, err := db.Query("SELECT password, session_token, salt, private_key, totp_key FROM users where username = ?", u.Name)
 		if err != nil {
 			response(w, false, "Unexpected error", nil)
 			return
@@ -494,20 +634,31 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		var data map[string]interface{}
 		if result.Next() {
 			// Obtain login information
-			var password, session_token, salt, private_key []byte
+			var password, session_token, salt, private_key, totp_key []byte
 			var loginMsg string
 			var loginOk bool
-			err = result.Scan(&password, &session_token, &salt, &private_key)
-			chk(err)
+			err = result.Scan(&password, &session_token, &salt, &private_key, &totp_key)
+			if err != nil {
+				response(w, false, "Unexpected server error", nil)
+				return
+			}
+			totpAuth := utils.Decompress(utils.DecryptRSA(totp_key, state.privKey))
+			var secondFactor string
+			if string(totpAuth) == "" || string(totpAuth) == "0" || totpAuth == nil {
+				secondFactor = "0"
+			} else {
+				secondFactor = "1"
+			}
 
 			// Check login information
 			providedPass := utils.Argon2Key(u.Password, salt)
 			if bytes.Equal(providedPass, password) {
 				data = map[string]interface{}{
-					"privkey": utils.Encode64(private_key),
+					"privkey":   utils.Encode64(private_key),
+					"totp_auth": secondFactor,
 				}
 				loginOk = true
-				loginMsg = "Login correct. Welcome"
+				loginMsg = "Login correct."
 			} else {
 				loginOk = false
 				loginMsg = "Login failed. Invalid credentials for user"
@@ -516,7 +667,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			// Update session_token and last_seen fields
 			_, err := db.Query("UPDATE users SET session_token=?, last_seen=? where username=?", u.SessionToken, u.Seen, u.Name)
 			if err != nil {
-				response(w, false, "Unexpected error", nil)
+				response(w, false, "Unexpected server error", nil)
 				return
 			}
 
@@ -524,9 +675,40 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			response(w, loginOk, loginMsg, data)
 			return
 		} else {
-			response(w, false, "User non existent", data)
+			response(w, false, "User does not exist", data)
 			return
 		}
+	case "validateTOTP":
+		// Decrypt AES Key
+		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+
+		// Get user data
+		u := user{}
+		u.Name = utils.Decrypt(utils.Decode64(req.Form.Get("user")), aesKey)
+		db := utils.ConnectDB()
+		defer db.Close()
+		result, err := db.Query("SELECT totp_key FROM users where username = ?", u.Name)
+
+		if result.Next() {
+			var totpKey []byte
+			err = result.Scan(&totpKey)
+			if err != nil {
+				response(w, false, "Unexpected server error", nil)
+				return
+			}
+			decryptedTOTPKey := utils.Decompress(utils.DecryptRSA(totpKey, state.privKey))
+			code := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("totp_code")), aesKey))
+			if validateTOTP(string(decryptedTOTPKey), string(code)) {
+				response(w, true, "Login correct.", nil)
+			}
+		} else {
+			response(w, false, "User does not exist", nil)
+			return
+		}
+	case "remove2ndFactor":
+		remove2ndFactor(w, req)
+	case "add2ndFactor":
+		add2ndFactor(w, req)
 	case "postCred":
 		createCredential(w, req)
 	case "getAllCred":
@@ -539,32 +721,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		deleteCredentials(w, req)
 	case "checkCred":
 		checkCredendial(w, req)
-	case "data": // ** obtener datos de usuario
-		u, ok := gUsers[req.Form.Get("user")] // ¿existe ya el usuario?
-		if !ok {
-			response(w, false, "Not authenticated", nil)
-			return
-		} else if u.Name == nil /*|| (time.Since(u.Seen).Minutes() > 60)*/ {
-			// sin token o con token expirado
-			response(w, false, "Not authenticated", nil)
-			return
-		} else if !bytes.EqualFold(u.Name, utils.Decode64(req.Form.Get("username"))) {
-			// username no coincide
-			response(w, false, "Not authenticated", nil)
-			return
-		}
-
-		datos, err := json.Marshal(&u.Data) //
-		chk(err)
-		//u.Seen = time.Now()
-		//gUsers[u.Name] = u
-		data := map[string]interface{}{
-			"token": u.Name,
-		}
-		response(w, true, string(datos), data)
-
 	default:
 		response(w, false, "Command not valid", nil)
 	}
-
 }
