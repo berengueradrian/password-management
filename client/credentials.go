@@ -198,7 +198,7 @@ func CreateCredential() {
 	r.Body.Close()
 
 	// Enter to the user menu
-	UserMenu()
+	//UserMenu()
 }
 
 func ListAllCredentials() {
@@ -363,7 +363,7 @@ func ListAllCredentials() {
 	r.Body.Close()
 
 	// Enter to the user menu
-	UserMenu()
+	//UserMenu()
 }
 
 func showCredential(cred server.Credential) {
@@ -719,7 +719,7 @@ func ModifyCredential() {
 	r2.Body.Close()
 
 	// Enter to the user menu
-	UserMenu()
+	//UserMenu()
 }
 
 func DeleteCredential() {
@@ -798,7 +798,7 @@ func DeleteCredential() {
 	cred_id_c = utils.Encode64(utils.Encrypt(utils.Compress(cred_id), keycom))
 	pubkey_c = utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
 	keycom_c = utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
-	id_password_c := utils.Encode64(utils.Encrypt(utils.Compress(id_password), keycom))
+	id_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(utils.Encode64(id_password))), keycom))
 
 	// Digital signature
 	digest = utils.HashSHA512([]byte("deleteCred" + cred_id_c + pubkey_c + keycom_c + id_password_c + utils.GetTime()))
@@ -827,7 +827,7 @@ func DeleteCredential() {
 	r.Body.Close()
 
 	// Enter to the user menu
-	UserMenu()
+	//UserMenu()
 }
 
 func readFile(path string) ([]byte, error) {
