@@ -302,10 +302,11 @@ func ListAllCredentials() {
 				aux := p.(map[string]interface{})
 				//fmt.Println("passs")
 				for i := range creds {
-					cred_id := utils.Decode64(aux["Credential_id"].(string))
+					cred_id := aux["Credential_id"].(string)
+					cred_id = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(cred_id), state.privKey)))
 					//fmt.Println(utils.Encode64([]byte(creds[i].Credential_id)))
 					//fmt.Println(utils.Encode64([]byte(cred_id)))
-					if utils.Encode64([]byte(creds[i].Credential_id)) == utils.Encode64(cred_id) {
+					if utils.Encode64([]byte(creds[i].Credential_id)) == cred_id {
 						//fmt.Println("hola")
 						creds[i].Password = aux["Password"].(string)
 						creds[i].Filename = aux["Filename"].(string)
@@ -631,6 +632,7 @@ func ModifyCredential() {
 		aux := c.(map[string]interface{})
 		//id_pass_server := utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
 		id_pass_server := aux["Credential_id"].(string)
+		id_pass_server = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(id_pass_server), state.privKey)))
 		if utils.Encode64(id_password) == id_pass_server {
 			pass_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), aeskey))
 			if aux["Filename"].(string) != "" {

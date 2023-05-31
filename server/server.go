@@ -252,7 +252,7 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 	var id string
 	for result.Next() {
 		result.Scan(&id, &password, &filename, &filecontents)
-		c.Credential_id = id
+		c.Credential_id = utils.Encode64(utils.EncryptRSA(utils.Compress([]byte(id)), public_key))
 		c.Password = utils.Encode64(password)
 		c.Filename = utils.Encode64(filename)
 		c.FileContents = utils.Encode64(filecontents)
@@ -459,7 +459,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		data := map[string]interface{}{
 			"username": u.Name,
 		}
-		response(w, true, "User registered", data)
+		response(w, true, "User registered", nil)
 
 	case "login":
 
