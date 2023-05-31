@@ -256,8 +256,9 @@ func ListAllCredentials() {
 			cred_id := string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData)))
 			// Decrypted identifiers of credentials
 			cred.Credential_id = cred_id
-			fmt.Println(utils.Encode64([]byte(cred.Credential_id)))
-			identifiers = append(identifiers, cred.Credential_id)
+			/* fmt.Println("ids")
+			fmt.Println(utils.Encode64([]byte(cred.Credential_id))) */
+			identifiers = append(identifiers, utils.Encode64([]byte(cred.Credential_id)))
 
 			creds = append(creds, cred)
 		}
@@ -301,12 +302,14 @@ func ListAllCredentials() {
 		if resp2.Data["passwords"] != nil {
 			for _, p := range resp2.Data["passwords"].([]interface{}) {
 				aux := p.(map[string]interface{})
+				//fmt.Println("passs")
 				for i := range creds {
 					cred_id := utils.Decode64(aux["Credential_id"].(string))
+					//fmt.Println(utils.Encode64([]byte(creds[i].Credential_id)))
+					//fmt.Println(utils.Encode64([]byte(cred_id)))
 					if utils.Encode64([]byte(creds[i].Credential_id)) == utils.Encode64(cred_id) {
 						//fmt.Println("hola")
 						creds[i].Password = aux["Password"].(string)
-						fmt.Println(utils.Encode64([]byte(creds[i].Credential_id)))
 						creds[i].Filename = aux["Filename"].(string)
 						if creds[i].Filename != "" {
 							anyFile = true

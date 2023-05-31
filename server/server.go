@@ -132,7 +132,7 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	c.Key = req.Form.Get("aes_key")
 	cred_id := req.Form.Get("cred_id")
 	cred_id_pass := req.Form.Get("cred_id_pass")
-	cred_id_pass_orig := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id_pass_orig")), keycom))
+	cred_id_pass_orig := utils.Encode64(utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id_pass_orig")), keycom)))
 	cred_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), keycom))
 
 	// Check existance of alias
@@ -149,7 +149,7 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	// Insert information
 	_, errr := db.Query("INSERT INTO credentials values (?,?,?,?)", cred_id_pass_orig, utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents))
 	chk(errr)
-	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?,?)", utils.Decode64(cred_id), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias), utils.Decode64(cred_id_pass))
+	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?,?)", utils.Decode64(cred_id), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias), cred_id_pass)
 	chk(err)
 
 	// Response
@@ -184,7 +184,8 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 
 	var creds []Credential
 	c := Credential{}
-	var alias, site, username, key, credential_id []byte
+	var alias, site, username, key []byte
+	var credential_id string
 	for result.Next() {
 		result.Scan(&alias, &site, &username, &key, &credential_id)
 		c.Alias = utils.Encode64(alias)
@@ -192,7 +193,7 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 		c.Username = utils.Encode64(username)
 		c.Key = utils.Encode64(key)
 		//c.Password = utils.Encode64(password)
-		c.Credential_id = utils.Encode64(credential_id)
+		c.Credential_id = credential_id
 		//c.Filename = utils.Encode64(filename)
 		//c.FileContents = utils.Encode64(filecontents)
 		creds = append(creds, c)
@@ -247,10 +248,11 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 
 	var creds []Credential
 	c := Credential{}
-	var id, password, filename, filecontents []byte
+	var password, filename, filecontents []byte
+	var id string
 	for result.Next() {
 		result.Scan(&id, &password, &filename, &filecontents)
-		c.Credential_id = utils.Encode64(id)
+		c.Credential_id = id
 		c.Password = utils.Encode64(password)
 		c.Filename = utils.Encode64(filename)
 		c.FileContents = utils.Encode64(filecontents)
