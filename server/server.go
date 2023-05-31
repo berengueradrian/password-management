@@ -225,16 +225,17 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	// Get request data
-	identifiers := utils.Decode64(req.Form.Get("identifiers"))
-	identifiers_array := strings.Split(string(identifiers), ",")
-	var id_array []string
+	identifiers := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("identifiers")), aeskey))
+	//identifiers := utils.Decode64(req.Form.Get("identifiers"))
+	identifiers_array := strings.Split(string(identifiers), " ")
+	/* var id_array []string
 	for _, i := range identifiers_array {
 		id_array = append(id_array, string(utils.Decompress(utils.Decrypt(utils.Decode64(i), aeskey))))
-	}
+	} */
 
 	// Get list of passwords
 	query_string := "SELECT id,password,filename,filecontents FROM credentials WHERE id IN ("
-	for i, id := range id_array {
+	for i, id := range identifiers_array {
 		if i > 0 {
 			query_string += ","
 		}
@@ -282,7 +283,7 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("newAlias") + req.Form.Get("newSite") +
 		req.Form.Get("newUsername") + req.Form.Get("newFilename") + req.Form.Get("aes_key") + req.Form.Get("aeskeycom") +
 		req.Form.Get("id_alias") + req.Form.Get("id_password") + req.Form.Get("pubkey") +
-		req.Form.Get("newPassword") + utils.GetTime()))
+		req.Form.Get("newPassword") + req.Form.Get("changePass") + req.Form.Get("changeFile") + utils.GetTime()))
 	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	// Get credential information
@@ -296,32 +297,24 @@ func modifyCredentials(w http.ResponseWriter, req *http.Request) {
 	c.Key = req.Form.Get("aes_key")
 	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("id_alias")), keycom))
 	cred_pass := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("id_password")), keycom))
+	changePass := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("changePass")), keycom))
+	changeFile := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("changeFile")), keycom))
 
-	// Search credential data
-	/* result, errs := db.Query("SELECT aes_key,credential_id from users_data where id=?", cred_id)
-	chk(errs)
-	if result.Next() {
-
-	} else {
-		response(w, false, "Credential not found", nil)
-	} */
-
-	// Check existance of alias
-	/* result, err_s := db.Query("SELECT alias FROM users_data where id = ?", cred_id)
-	if err_s != nil {
-		response(w, false, "Unexpected error", nil)
-		return
-	}
-	if result.Next() {
-		response(w, false, "Duplicated alias. Credential not modified", nil)
-		return
-	} */
-
-	// Update information
+	// Update user information
 	_, err := db.Query("UPDATE users_data SET alias=?, site=?, username=?, aes_key=? WHERE id=?", utils.Decode64(c.Alias), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_id)
 	chk(err)
-	_, errr := db.Query("UPDATE credentials SET password=?, filename=?, filecontents=? WHERE id=?", utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents), cred_pass)
-	chk(errr)
+
+	// Update pass information
+	if string(changePass) == "1" && string(changeFile) == "1" {
+		_, errr := db.Query("UPDATE credentials SET password=?, filename=?, filecontents=? WHERE id=?", utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents), cred_pass)
+		chk(errr)
+	} else if string(changePass) == "1" {
+		_, errr := db.Query("UPDATE credentials SET password=? WHERE id=?", utils.Decode64(c.Password), cred_pass)
+		chk(errr)
+	} else if string(changeFile) == "1" {
+		_, errr := db.Query("UPDATE credentials SET filename=?, filecontents=? WHERE id=?", utils.Decode64(c.Filename), utils.Decode64(c.FileContents), cred_pass)
+		chk(errr)
+	}
 
 	// Response
 	response(w, true, "Credential modified", nil)
