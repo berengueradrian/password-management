@@ -204,6 +204,9 @@ func Register() {
 	key := make([]byte, 32) // random key to encrypt the data with AES
 	rand.Read(key)
 
+	key2 := make([]byte, 32) // random key to encrypt the response with AES
+	rand.Read(key2)
+
 	// **Registration, user's data
 	data := url.Values{}        // structure to contain the values
 	data.Set("cmd", "register") // command (string)
@@ -223,6 +226,8 @@ func Register() {
 	data.Set("pubkey", utils.Encode64(utils.Encrypt(utils.Compress(pubJSON), key)))
 	// Private key
 	data.Set("privkey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData))) // in an actual client-server app, this would be stored in the client's local storage
+	// AES Key for response
+	data.Set("aes_key_r", utils.Encode64(utils.Encrypt(utils.Compress(key2), key)))
 	// AES key
 	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
 	// 2nd authentication factor
@@ -245,11 +250,12 @@ func Register() {
 			fmt.Println("Error: QR code data is invalid")
 			return
 		}
-		qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
+		qrCodeData := utils.Decompress(utils.Decrypt(utils.Decode64(qrCodeStr), key2))
+		/* qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
 		if err != nil {
 			fmt.Println("Error decoding QR code data:", err)
 			return
-		}
+		} */
 		err = saveQRCodeToFile(qrCodeData)
 		if err != nil {
 			fmt.Println("Error saving QR code:", err)

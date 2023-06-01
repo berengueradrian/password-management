@@ -548,6 +548,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// Get the AES key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+		// Get the AES key for response
+		aesKey2 := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("aes_key_r")), aesKey))
 
 		// Check if the user is already registered
 		username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
@@ -596,9 +598,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		defer insert.Close() // close the insert statement
-		data := map[string]interface{}{
-			"username": u.Name,
-		}
+		data := map[string]interface{}{}
 		// Generate QR code if the user chose the 2nd auth factor
 		if second == "1" {
 			code, err := generateQRCode(totpKey)
@@ -606,7 +606,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 				response(w, false, "**Error generating QR code", nil)
 				return
 			}
-			data["qr_code"] = code
+			data["qr_code"] = utils.Encode64(utils.Encrypt(utils.Compress(code), aesKey2))
 		}
 		response(w, true, "User registered", data)
 
