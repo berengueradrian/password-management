@@ -322,9 +322,6 @@ func CreateCredential() {
 
 	// Finish request
 	r.Body.Close()
-
-	// Enter to the user menu
-	//UserMenu()
 }
 
 func ListCredentials() {
@@ -459,8 +456,6 @@ func ListAllCredentials() {
 			cred_id := string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData)))
 			// Decrypted identifiers of credentials
 			cred.Credential_id = cred_id
-			/* fmt.Println("ids")
-			fmt.Println(utils.Encode64([]byte(cred.Credential_id))) */
 			identifiers = append(identifiers, utils.Encode64([]byte(cred.Credential_id)))
 
 			creds = append(creds, cred)
@@ -506,8 +501,6 @@ func ListAllCredentials() {
 				for i := range creds {
 					cred_id := aux["Credential_id"].(string)
 					cred_id = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(cred_id), state.privKey)))
-					//fmt.Println(utils.Encode64([]byte(creds[i].Credential_id)))
-					//fmt.Println(utils.Encode64([]byte(cred_id)))
 					if utils.Encode64([]byte(creds[i].Credential_id)) == cred_id {
 						creds[i].Password = aux["Password"].(string)
 						creds[i].Filename = aux["Filename"].(string)
@@ -517,7 +510,7 @@ func ListAllCredentials() {
 							files[mapAlias] = File{
 								Name:     creds[i].Filename,
 								Contents: aux["FileContents"].(string),
-								Key: creds[i].Key,
+								Key:      creds[i].Key,
 							}
 						}
 					}
@@ -525,9 +518,6 @@ func ListAllCredentials() {
 			}
 		}
 		r2.Body.Close()
-		//p := resp2.Data["passwords"].([]interface{})[0]
-		//aux := p.(map[string]interface{})
-		//fmt.Println(string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), utils.Decompress(utils.Decrypt(utils.Decode64(creds[0].Key), state.kData))))))
 
 		// Show credentials
 		if len(creds) != 0 {
@@ -604,51 +594,6 @@ func DownloadFile(filename string, fileContents []byte) {
 	_, err = io.Copy(f, bytes.NewReader(fileContents))
 	chk(err)
 }
-
-/* func CheckCredential(alias string) bool {
-	// Generate random key to encrypt the data with AES
-	key := make([]byte, 32)
-	rand.Read(key)
-	// Obtain public key of client from private key
-	pkJson, err := json.Marshal(state.privKey.PublicKey)
-	chk(err)
-
-	// Compute cyphered data
-	id := utils.HashSHA512([]byte(alias + string(state.user_id)))
-	id_c := utils.Encode64(utils.Encrypt(utils.Compress(id), key))
-	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), key))
-	aeskey_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
-
-	// Create digital signature
-	digest := utils.HashSHA512([]byte("checkCred" + id_c + pubkey_c + aeskey_c + utils.GetTime()))
-	sign := utils.SignRSA(digest, state.privKey)
-
-	// Set data
-	data := url.Values{}
-	data.Set("cmd", "checkCred")
-	data.Set("cred_id", id_c)
-	data.Set("pubkey", pubkey_c)
-	data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), key)))
-	data.Set("aeskey", aeskey_c)
-
-	// POST request
-	r, err := state.client.PostForm("https://localhost:10443", data)
-	chk(err)
-
-	// Obtain response from server
-	resp := server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
-
-	// Finish request
-	r.Body.Close()
-
-	// Decide response
-	if !resp.Ok {
-		fmt.Println("\n" + resp.Msg + "\n")
-		return false
-	}
-	return true
-} */
 
 func ModifyCredential() {
 	var alias, newAlias, newSite, newUsername, newPassword, newFilename, path, extension string
@@ -822,9 +767,6 @@ func ModifyCredential() {
 
 	// Finish request
 	r2.Body.Close()
-
-	// Enter to the user menu
-	//UserMenu()
 }
 
 func DeleteCredential() {
@@ -930,9 +872,6 @@ func DeleteCredential() {
 
 	// Finish request
 	r.Body.Close()
-
-	// Enter to the user menu
-	//UserMenu()
 }
 
 func readFile(path string) ([]byte, error) {
