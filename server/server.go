@@ -613,6 +613,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	case "login":
 		// Decrypt AES Key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+		// Decrypt AES Key response
+		aesKey_response := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("aes_key_r")), aesKey))
 
 		// Get user data
 		u := user{}
@@ -655,7 +657,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			if bytes.Equal(providedPass, password) {
 				data = map[string]interface{}{
 					"privkey":   utils.Encode64(private_key),
-					"totp_auth": secondFactor,
+					"totp_auth": utils.Encode64(utils.Encrypt(utils.Compress([]byte(secondFactor)), aesKey_response)),
 				}
 				loginOk = true
 				loginMsg = "Login correct."
@@ -675,7 +677,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			response(w, loginOk, loginMsg, data)
 			return
 		} else {
-			response(w, false, "User does not exist", data)
+			response(w, false, "User does not exist", nil)
 			return
 		}
 	case "validateTOTP":

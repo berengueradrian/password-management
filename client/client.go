@@ -303,6 +303,9 @@ func Login() {
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
 	rand.Read(key)
+	// Generate random key to encrypt the data with AES in response
+	key2 := make([]byte, 32)
+	rand.Read(key2)
 	// Generate random session token
 	sessionToken := make([]byte, 16)
 	rand.Read(sessionToken)
@@ -315,6 +318,7 @@ func Login() {
 	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(sessionToken)), key)))                       // Session token
 	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), key))) // Last seen
 	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))                                 // AES Key
+	data.Set("aes_key_r", utils.Encode64(utils.Encrypt(utils.Compress(key2), key)))                                             // AES Key response
 
 	// POST request
 	r, err := client.PostForm("https://localhost:10443", data)
@@ -337,8 +341,9 @@ func Login() {
 		state.privKey = private_key
 		// Store in state so the user menu knows to delete or create a 2nd auth factor
 		state.auth2 = resp.Data["totp_auth"].(string)
+		state.auth2 = string(utils.Decompress(utils.Decrypt(utils.Decode64(state.auth2), key2)))
 
-		if resp.Data["totp_auth"] == "1" {
+		if state.auth2 == "1" {
 			// Show response
 			fmt.Println("\n Correct credentials. \n")
 			for i := 3; i >= 1; i-- {
