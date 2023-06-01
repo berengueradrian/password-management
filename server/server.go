@@ -14,18 +14,14 @@ import (
 	"net/http"
 	"password-management/utils"
 	"strings"
-
-	//"os"
 	"encoding/base32"
 	"time"
-
 	"github.com/skip2/go-qrcode"
 	"github.com/xlzd/gotp"
 )
 
 // Context of the server to maintain the state between requests
 var state struct {
-	// TO-DO: need to check if this state should be encrypted or something
 	privKey *rsa.PrivateKey // server's private key (includes the public key)
 }
 

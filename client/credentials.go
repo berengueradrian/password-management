@@ -21,6 +21,7 @@ import (
 type File struct {
 	Name     string
 	Contents string
+	Key      string
 }
 
 func checkAlias(alias string) []byte {
@@ -180,8 +181,8 @@ func GetPasswordInformation(id_password string, aeskey []byte) server.Credential
 		if utils.Encode64([]byte(id_password)) == id_pass_server {
 			pass_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), aeskey))
 			if aux["Filename"].(string) != "" {
-				filename_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Filename"].(string)), state.kData))
-				filecontents_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["FileContents"].(string)), state.kData))
+				filename_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Filename"].(string)), aeskey))
+				filecontents_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["FileContents"].(string)), aeskey))
 			}
 		}
 	}
@@ -267,17 +268,17 @@ func CreateCredential() {
 	alias_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(alias)), state.kData))
 	site_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(site)), state.kData))
 	username_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(username)), state.kData))
-	var fileContents_c, filename_c string
-	if addFile == "y" {
-		filename_c = utils.Encode64(utils.Encrypt(utils.Compress([]byte(filename)), state.kData))
-		fileContents_c = utils.Encode64(utils.Encrypt(utils.Compress(fileContents), state.kData))
-	}
 	cred_id_pass_c := utils.Encode64(utils.Encrypt(utils.Compress(cred_id_pass), state.kData))
 	cred_id_pass_orig := utils.Encode64(utils.Encrypt(utils.Compress(cred_id_pass), keycom))
 	cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(cred_id), state.kData))
 	aeskey_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData))
 	user_id_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(state.user_id)), keycom))
 	password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(password)), key))
+	var fileContents_c, filename_c string
+	if addFile == "y" {
+		filename_c = utils.Encode64(utils.Encrypt(utils.Compress([]byte(filename)), key))
+		fileContents_c = utils.Encode64(utils.Encrypt(utils.Compress(fileContents), key))
+	}
 	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
 	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
 
@@ -406,9 +407,7 @@ func ListOneCredential() {
 }
 
 func ListAllCredentials() {
-
 	// RETRIEVE CREDENTIALS DATA
-
 	anyFile := false
 	// Obtain public key of client from private key
 	pkJson, err := json.Marshal(state.privKey.PublicKey)
@@ -468,7 +467,6 @@ func ListAllCredentials() {
 		}
 
 		// OBTAIN PASSWORDS FOR CREDENTIALS
-
 		// Generate random key to encrypt the data with AES
 		key2 := make([]byte, 32)
 		rand.Read(key2)
@@ -511,7 +509,6 @@ func ListAllCredentials() {
 					//fmt.Println(utils.Encode64([]byte(creds[i].Credential_id)))
 					//fmt.Println(utils.Encode64([]byte(cred_id)))
 					if utils.Encode64([]byte(creds[i].Credential_id)) == cred_id {
-						//fmt.Println("hola")
 						creds[i].Password = aux["Password"].(string)
 						creds[i].Filename = aux["Filename"].(string)
 						if creds[i].Filename != "" {
@@ -520,6 +517,7 @@ func ListAllCredentials() {
 							files[mapAlias] = File{
 								Name:     creds[i].Filename,
 								Contents: aux["FileContents"].(string),
+								Key: creds[i].Key,
 							}
 						}
 					}
@@ -548,8 +546,9 @@ func ListAllCredentials() {
 						fmt.Scan(&alias)
 						file, ok := files[alias]
 						if ok {
-							fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
-							fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
+							aesKey := utils.Decompress(utils.Decrypt(utils.Decode64(file.Key), state.kData))
+							fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), aesKey)))
+							fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), aesKey))
 							DownloadFile(fileName, fileContents)
 							fmt.Println("\nFile downloaded successfully")
 							break
@@ -577,10 +576,10 @@ func showCredential(cred server.Credential) {
 	cred.Alias = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Alias), state.kData)))
 	cred.Site = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Site), state.kData)))
 	cred.Username = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Username), state.kData)))
-	if cred.Filename != "" {
-		cred.Filename = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Filename), state.kData)))
-	}
 	cred.Key = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Key), state.kData)))
+	if cred.Filename != "" {
+		cred.Filename = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Filename), []byte(cred.Key))))
+	}
 	cred.Password = string(utils.Decompress(utils.Decrypt(utils.Decode64(cred.Password), []byte(cred.Key))))
 
 	// Prompt information
@@ -660,7 +659,6 @@ func ModifyCredential() {
 	var err error
 
 	// COLLECT USER DATA
-
 	fmt.Print("-- Modify a credential --\n")
 
 	// Check alias existance
@@ -735,7 +733,7 @@ func ModifyCredential() {
 				fileContents, err = readFile(path)
 
 				if err != nil {
-					fmt.Println("ERROR: Unsuccesfully reading of file: ", err)
+					fmt.Println("ERROR: Unable to read the file: ", err)
 				} else {
 					break
 				}
@@ -744,12 +742,10 @@ func ModifyCredential() {
 	}
 
 	// GET CREDS AND PASSWORD INFORMATION
-
 	cred := GetCredentialInformation(alias)
 	cred_pass := GetPasswordInformation(cred.Credential_id, []byte(cred.Key))
 
 	// MODIFY DATA
-
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
 	rand.Read(key)
@@ -780,9 +776,9 @@ func ModifyCredential() {
 	newAlias_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newAlias)), state.kData))
 	newSite_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newSite)), state.kData))
 	newUsername_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newUsername)), state.kData))
-	newFilename_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newFilename)), state.kData))
-	newFileContents_c := utils.Encode64(utils.Encrypt(utils.Compress(fileContents), state.kData))
 	newPassword_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newPassword)), key))
+	newFilename_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newFilename)), key))
+	newFileContents_c := utils.Encode64(utils.Encrypt(utils.Compress(fileContents), key))
 	aeskey_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData))
 	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
 	id_alias_c := utils.Encode64(utils.Encrypt(utils.Compress(id_alias), keycom))
