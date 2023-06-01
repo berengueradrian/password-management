@@ -8,14 +8,15 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"password-management/utils"
 	"strings"
-	"encoding/base32"
 	"time"
+
 	"github.com/skip2/go-qrcode"
 	"github.com/xlzd/gotp"
 )
@@ -194,10 +195,7 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 		c.Site = utils.Encode64(site)
 		c.Username = utils.Encode64(username)
 		c.Key = utils.Encode64(key)
-		//c.Password = utils.Encode64(password)
 		c.Credential_id = credential_id
-		//c.Filename = utils.Encode64(filename)
-		//c.FileContents = utils.Encode64(filecontents)
 		creds = append(creds, c)
 	}
 
@@ -229,12 +227,7 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 
 	// Get request data
 	identifiers := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("identifiers")), aeskey))
-	//identifiers := utils.Decode64(req.Form.Get("identifiers"))
 	identifiers_array := strings.Split(string(identifiers), " ")
-	/* var id_array []string
-	for _, i := range identifiers_array {
-		id_array = append(id_array, string(utils.Decompress(utils.Decrypt(utils.Decode64(i), aeskey))))
-	} */
 
 	// Get list of passwords
 	placeholders := make([]string, len(identifiers_array))
@@ -245,14 +238,6 @@ func getAllPasswords(w http.ResponseWriter, req *http.Request) {
 	}
 	query_string := "SELECT id, password, filename, filecontents FROM credentials WHERE id IN (" + strings.Join(placeholders, ",") + ")"
 
-	/* query_string := "SELECT id,password,filename,filecontents FROM credentials WHERE id IN ("
-	for i, _ := range identifiers_array {
-		if i > 0 {
-			query_string += ","
-		}
-		query_string += "'" + "?" + "'"
-	}
-	query_string += ")" */
 	result, err := db.Query(query_string, values...)
 	chk(err)
 
@@ -356,13 +341,6 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
 	pass_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("id_password")), keycom))
 
-	/* // Search credential id
-	result, errs := db.Query("SELECT * from users_data where id=?", cred_id)
-	chk(errs)
-	if !result.Next() {
-		response(w, false, "Credential not found", nil)
-	} */
-
 	// Delete credential
 	_, err := db.Query("DELETE FROM credentials WHERE id=?", pass_id)
 	chk(err)
@@ -424,19 +402,6 @@ func generateQRCode(secret string) ([]byte, error) {
 	}
 
 	return qrCode, nil
-
-	// file, err := os.Create("QR.png")
-	// if err != nil {
-	// 	return err
-	// }
-	// defer file.Close()
-
-	// _, err = file.Write(qrCode)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// return nil
 }
 
 // generates a TOTP code based on the secret key from the user
@@ -706,7 +671,6 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		// Get DS data
 		var public_key *rsa.PublicKey
 		username := utils.Decrypt(utils.Decode64(req.Form.Get("user")), aesKey)
-		//totpcode := utils.Decrypt(utils.Decode64(req.Form.Get("totp_code")), aesKey)
 		signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aesKey))
 		pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))
 		_error := json.Unmarshal(pubkey, &public_key)

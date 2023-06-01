@@ -21,6 +21,7 @@ import (
 	"password-management/utils"
 	"strconv"
 	"time"
+
 	"github.com/sethvargo/go-password/password"
 )
 
@@ -250,11 +251,6 @@ func Register() {
 			return
 		}
 		qrCodeData := utils.Decompress(utils.Decrypt(utils.Decode64(qrCodeStr), key2))
-		/* qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
-		if err != nil {
-			fmt.Println("Error decoding QR code data:", err)
-			return
-		} */
 		err = saveQRCodeToFile(qrCodeData)
 		if err != nil {
 			fmt.Println("Error saving QR code:", err)
@@ -512,11 +508,6 @@ func Add2ndFactor() {
 			return
 		}
 		qrCodeData := utils.Decompress(utils.Decrypt(utils.Decode64(qrCodeStr), key2))
-		/* qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
-		if err != nil {
-			fmt.Println("Error decoding QR code data:", err)
-			return
-		} */
 		err = saveQRCodeToFile(qrCodeData)
 		if err != nil {
 			fmt.Println("Error saving QR code:", err)
