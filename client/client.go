@@ -489,7 +489,7 @@ func UserMenu() {
 			switch command.Text() {
 			case "1":
 				fmt.Println()
-				ListAllCredentials()
+				ListCredentials()
 			case "2":
 				fmt.Println()
 				CreateCredential()

@@ -1,9 +1,10 @@
 /*
-	Credentials
+Credentials
 */
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
@@ -204,6 +205,186 @@ func CreateCredential() {
 	//UserMenu()
 }
 
+func ListCredentials() {
+	return_option := false
+	for {
+		// Prompt menu
+		os.Stdout.WriteString("--- Credentials menu ---\n" +
+			"- Choose an action to perform\n\n" +
+			"1. Search credential by alias\n" +
+			"2. List all credentials\n" +
+			"3. Return\n\n")
+		os.Stdout.WriteString(
+			"- Introduce an option\n" +
+				"> ")
+		// Read user input
+		command := bufio.NewScanner(os.Stdin)
+		if command.Scan() {
+			switch command.Text() {
+			case "1":
+				fmt.Println()
+				ListOneCredential()
+			case "2":
+				fmt.Println()
+				ListAllCredentials()
+			case "3":
+				return_option = true
+			default:
+				fmt.Println("Uknown command '", command.Text(), "'.")
+			}
+		}
+		if return_option {
+			break
+		}
+	}
+}
+
+func ListOneCredential() {
+	var alias string
+	var id_alias []byte
+
+	// Check alias existance
+	for {
+		fmt.Print("- Enter the credential's alias (or 'q' to quit): ")
+		fmt.Scan(&alias)
+		fmt.Println()
+		if alias == "q" {
+			return
+		}
+		id_alias = checkAlias(alias)
+		if id_alias == nil {
+			fmt.Println("ERROR: Alias not found. Try again.\n")
+		} else {
+			break
+		}
+	}
+
+	// GET KEY AND PASSWORD ID
+
+	// Generate communication aes key
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+
+	// Prepare data
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+	user_id_c := utils.Encode64(utils.Encrypt(utils.Compress(state.user_id), keycom))
+
+	// Digital signature
+	digest2 := utils.HashSHA512([]byte("getAllCred" + user_id_c + pubkey_c + keycom_c + utils.GetTime()))
+	sign2 := utils.SignRSA(digest2, state.privKey)
+	sign2_c := utils.Encode64(utils.Encrypt(utils.Compress(sign2), keycom))
+
+	// Set values
+	data2 := url.Values{}
+	data2.Set("cmd", "getAllCred")
+	data2.Set("user_id", user_id_c)
+	data2.Set("pubkey", pubkey_c)
+	data2.Set("aes_key", keycom_c)
+	data2.Set("signature", sign2_c)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data2)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Finish request
+	r.Body.Close()
+
+	// Filter data
+	var id_password, site_server, username_server, aeskey, alias_server []byte
+	for _, c := range resp.Data["credentials"].([]interface{}) {
+		aux := c.(map[string]interface{})
+		alias_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Alias"].(string)), state.kData))
+		if alias == string(alias_server) {
+			id_password = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
+			site_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Site"].(string)), state.kData))
+			username_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Username"].(string)), state.kData))
+			aeskey = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Key"].(string)), state.kData))
+			break
+		}
+	}
+
+	// GET PASWORD INFORMATION (USED IN CASE PASSWORD IS NOT MODIFIERD)
+
+	// Generate communication aes key
+	keycom = make([]byte, 32)
+	rand.Read(keycom)
+
+	// Public key
+	pubkey_c = utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+
+	// Prepare data
+	keycom_c = utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+	id_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(utils.Encode64(id_password))), keycom))
+
+	// Digital signature
+	digest := utils.HashSHA512([]byte("getAllPass" + id_password_c + pubkey_c + keycom_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom))
+
+	// Set values
+	data := url.Values{}
+	data.Set("cmd", "getAllPass")
+	data.Set("identifiers", id_password_c)
+	data.Set("pubkey", pubkey_c)
+	data.Set("aes_key", keycom_c)
+	data.Set("signature", sign_c)
+
+	// POST request
+	r, err = state.client.PostForm("https://localhost:10443", data)
+	chk(err)
+
+	// Obtain response from server
+	resp = server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Finish request
+	r.Body.Close()
+
+	// Filter data
+	var pass_server, filename_server, filecontents_server []byte
+	for _, c := range resp.Data["passwords"].([]interface{}) {
+		aux := c.(map[string]interface{})
+		//id_pass_server := utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
+		id_pass_server := aux["Credential_id"].(string)
+		id_pass_server = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(id_pass_server), state.privKey)))
+		if utils.Encode64(id_password) == id_pass_server {
+			pass_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), aeskey))
+			if aux["Filename"].(string) != "" {
+				filename_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Filename"].(string)), state.kData))
+				filecontents_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["FileContents"].(string)), state.kData))
+			}
+		}
+	}
+
+	// Prompt information
+	fmt.Println("> Alias: " + string(alias_server))
+	fmt.Println("  Site: " + string(site_server))
+	fmt.Println("  Username: " + string(username_server))
+	fmt.Println("  Password: " + string(pass_server))
+	if string(filename_server) != "" {
+		fmt.Println("  Filename: " + string(filename_server))
+	}
+	fmt.Println()
+	if string(filename_server) != "" {
+		download := ""
+		fmt.Print("- Do you want to download the file? (y/n): ")
+		fmt.Scan(&download)
+		fmt.Println()
+		if download == "y" {
+			DownloadFile(string(filename_server), filecontents_server)
+			fmt.Println("\nFile downloaded successfully\n")
+		}
+	}
+}
+
 func ListAllCredentials() {
 
 	// RETRIEVE CREDENTIALS DATA
@@ -350,13 +531,14 @@ func ListAllCredentials() {
 							fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), state.kData)))
 							fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), state.kData))
 							DownloadFile(fileName, fileContents)
-							fmt.Println("\nFile downloaded successfully\n")
+							fmt.Println("\nFile downloaded successfully")
 							break
 						} else {
-							fmt.Println("ERROR: Alias incorrect, try again \n")
+							fmt.Println("ERROR: Alias incorrect, try again")
 						}
 					}
 				}
+				fmt.Println()
 			}
 		} else {
 			fmt.Println("No credentials were stored\n")
