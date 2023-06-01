@@ -528,8 +528,20 @@ func remove2ndFactor(w http.ResponseWriter, req *http.Request) {
 
 	// Get the AES key
 	aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
-	// Get the username
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aesKey))
 	username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("username") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
 	var totpNil string
 	_, err := db.Query("UPDATE users SET totp_key=? WHERE username=?", utils.EncryptRSA(utils.Compress([]byte(totpNil)), &state.privKey.PublicKey), username)
 	if err != nil {
@@ -695,9 +707,23 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		// Decrypt AES Key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
 
+		// Get DS data
+		var public_key *rsa.PublicKey
+		username := utils.Decrypt(utils.Decode64(req.Form.Get("user")), aesKey)
+		//totpcode := utils.Decrypt(utils.Decode64(req.Form.Get("totp_code")), aesKey)
+		signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aesKey))
+		pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))
+		_error := json.Unmarshal(pubkey, &public_key)
+		chk(_error)
+
+		// Verify signature
+		var digest []byte
+		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("user") + req.Form.Get("totp_code") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+		_ = utils.VerifyRSA(digest, signature, public_key)
+
 		// Get user data
 		u := user{}
-		u.Name = utils.Decrypt(utils.Decode64(req.Form.Get("user")), aesKey)
+		u.Name = username
 		db := utils.ConnectDB()
 		defer db.Close()
 		result, err := db.Query("SELECT totp_key FROM users where username = ?", u.Name)

@@ -347,16 +347,39 @@ func Login() {
 			// Show response
 			fmt.Println("\n Correct credentials. \n")
 			for i := 3; i >= 1; i-- {
+				// Key
 				key_2nd := make([]byte, 32)
 				rand.Read(key_2nd)
+
+				// Public key
+				pkJson, err := json.Marshal(state.privKey.PublicKey)
+				chk(err)
+				pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), key_2nd))
+
+				// Collect data
 				fmt.Print("- Introduce your TOTP code: ")
 				fmt.Scan(&totpCode)
+
+				// Prepare data
+				username_c := utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key_2nd))
+				totpCode_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(totpCode)), key_2nd))
+				key_2nd_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key_2nd), state.srvPubKey))
+
+				// Digital signature
+				var digest []byte
+				digest = utils.HashSHA512([]byte("validateTOTP" + username_c + totpCode_c + pkJson_c + key_2nd_c + utils.GetTime()))
+				sign := utils.SignRSA(digest, state.privKey)
+				sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), key_2nd))
+
 				// Data for validating the totp code
 				data_2nd := url.Values{}
 				data_2nd.Set("cmd", "validateTOTP")
-				data_2nd.Set("user", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key_2nd)))
-				data_2nd.Set("totp_code", utils.Encode64(utils.Encrypt(utils.Compress([]byte(totpCode)), key_2nd)))
-				data_2nd.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key_2nd), state.srvPubKey)))
+				data_2nd.Set("user", username_c)
+				data_2nd.Set("totp_code", totpCode_c)
+				data_2nd.Set("aes_key", key_2nd_c)
+				data_2nd.Set("pubkey", pkJson_c)
+				data_2nd.Set("signature", sign_c)
+
 				// POST request
 				response, err := client.PostForm("https://localhost:10443", data_2nd)
 				defer response.Body.Close()
@@ -375,7 +398,7 @@ func Login() {
 					fmt.Println("**Error, incorrect TOTP, you have " + strconv.Itoa(i-1) + " attempts left. \n")
 				} else {
 					// Show response correct
-					fmt.Println("\n- Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
+					//fmt.Println("\n- Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
 					fmt.Println("\n" + resp2.Msg + " Welcome " + userScan + "." + "\n")
 					break
 				}
@@ -395,11 +418,31 @@ func Login() {
 // Remove the 2nd authentication factor
 func Remove2ndFactor() {
 	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	chk(err)
+	pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), key))
+
+	// Prepare data
+	username_c := utils.Encode64(utils.Encrypt(state.user_id, key))
+	key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+
+	// Digital signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte("remove2ndFactor" + username_c + pkJson_c + key_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), key))
+
 	// Set request data
 	data := url.Values{}
 	data.Set("cmd", "remove2ndFactor")
-	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
-	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
+	data.Set("username", username_c)
+	data.Set("aes_key", key_c)
+	data.Set("pubkey", pkJson_c)
+	data.Set("signature", sign_c)
+
 	// POST request
 	response, err := state.client.PostForm("https://localhost:10443", data)
 	defer response.Body.Close()
@@ -422,6 +465,7 @@ func Remove2ndFactor() {
 // Add 2nd authentication factor
 func Add2ndFactor() {
 	key := make([]byte, 32)
+	rand.Read(key)
 
 	// Key for response
 	key2 := make([]byte, 32)
