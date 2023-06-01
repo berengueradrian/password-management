@@ -845,13 +845,16 @@ func DeleteCredential() {
 	}
 
 	// RETRIEVE ID PASSWORD
-
 	// Generate random key to encrypt the data with AES
 	keycom2 := make([]byte, 32)
 	rand.Read(keycom2)
 
 	// Obtain public key of client from private key
 	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	if err != nil {
+		fmt.Println("**Error retrieving public key: ")
+		return
+	}
 	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom2))
 
 	// Prepare data
@@ -894,7 +897,6 @@ func DeleteCredential() {
 	}
 
 	// DELETE CREDENTIAL
-
 	// Generate random key to encrypt the data with AES
 	keycom := make([]byte, 32)
 	rand.Read(keycom)
@@ -935,6 +937,117 @@ func DeleteCredential() {
 	//UserMenu()
 }
 
+func checkUser(username string) []byte {
+	// Generate random key to encrypt the data with AES
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	chk(err)
+
+	// Prepare data
+	pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+	username_c := utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(username)), keycom))
+
+	// Digital signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte("checkUser" + username_c + pkJson_c + keycom_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom))
+
+	// Set request values
+	data := url.Values{}
+	data.Set("cmd", "checkUser")
+	data.Set("pubkey", pkJson_c)
+	data.Set("signature", sign_c)
+	data.Set("aeskey", keycom_c)
+	data.Set("username", username_c)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp)
+	// Finish request
+	defer r.Body.Close()
+
+	// Check alias
+	public := utils.Decode64(resp.Data["public_key"].(string))
+	if public != nil {
+		return []byte(public)
+	}
+	return nil
+}
+
+// Shares credentials
+func ShareCredential() {
+	var alias string
+
+	// Alias of the credential to share
+	var users_data_id []byte
+	for {
+		fmt.Print("-- Share a credential --\n")
+		fmt.Print("- Alias: ")
+		fmt.Scan(&alias)
+		users_data_id = checkAlias(alias)
+		if users_data_id != nil {
+			break
+		} else {
+			fmt.Println("ERROR: Alias not found. Try again\n")
+		}
+	}
+
+	var user_to_share string
+	var user_to_share_public []byte
+	for {
+		fmt.Print("- Enter the username you want to share the password with: ")
+		fmt.Scan(&user_to_share)
+		user_to_share_public = checkUser(user_to_share)
+		if user_to_share_public != nil {
+			break
+		} else {
+			fmt.Println("ERROR: User not found. Try again.\n")
+		}
+	}
+
+	credential_to_share := GetPasswordInformation(string(id_cred), aes_key) // server.Credential -> password filename & filecontents decrypted
+	user_data_share := GetCredentialInformation(alias) // server.Credential -> site username alias key & cred_id
+
+	// Prepare credentials_shared table data
+	shared_id := make([]byte, 32)
+	rand.Read(shared_id)
+	shared_aes_key := make([]byte, 32)
+	rand.Read(shared_aes_key)
+	shared_aes_key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(shared_aes_key), user_to_share_public))
+	shared_by := state.user_id
+
+	// Prepare users_data table data
+	user_data_id := make([]byte, 32) // users_data_id
+	rand.Read(user_data_id)
+	user_data_site := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Site)), shared_aes_key)) // site
+	user_data_user_id := utils.Encode64(utils.HashSHA512([]byte(user_to_share))) // user_id
+	user_data_cred_id := make([]byte, 32) // cred_id
+	rand.Read(user_data_cred_id)
+	user_data_cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(user_data_cred_id), shared_aes_key)) // cred_id
+	user_data_alias := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Alias)), shared_aes_key)) // alias
+	user_data_username := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Username)), shared_aes_key)) // username
+	user_data_aes_key := make([]byte, 32) // aes_key
+	rand.Read(user_data_aes_key)
+	user_data_aes_key_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_aes_key)), shared_aes_key))
+
+	// Prepare credentials table data
+	cred_password := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Password)), user_data_aes_key)) // password
+	filename_password := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Filename)), user_data_aes_key)) // filename
+	filecontents_password := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Filecontents)), user_data_aes_key)) // filecontents
+
+	
+}
+
+// Reads a file and returns its content
 func readFile(path string) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {

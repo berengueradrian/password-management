@@ -374,7 +374,51 @@ func deleteCredentials(w http.ResponseWriter, req *http.Request) {
 	response(w, true, "Credential deleted", nil)
 }
 
-func checkCredendial(w http.ResponseWriter, req *http.Request) {
+func checkUser(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key to decrypt user data
+	key := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskey")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), key))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), key))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("username") +
+		req.Form.Get("pubkey") + req.Form.Get("aeskey") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get user information
+	user_id := utils.Decrypt(utils.Decode64(req.Form.Get("username")), key)
+	result, errs := db.Query("SELECT public_key from users where username=?", user_id)
+	if errs != nil {
+		response(w, false, "Error while searching user", nil)
+		return
+	}
+	if !result.Next() {
+		response(w, false, "User not found", nil)
+	}
+
+	var publicKey []byte
+	// Assuming the `public_key` column is of type string, you can use `result.Scan` to retrieve the value
+	if err := result.Scan(&publicKey); err != nil {
+		response(w, false, "Error while retrieving user data", nil)
+	}
+
+	data := map[string]interface{}{
+		"public_key": utils.Encode64(publicKey),
+	}
+	// Response
+	response(w, true, "User found", data)
+}
+
+func checkCredendtial(w http.ResponseWriter, req *http.Request) {
 	// Open db connection
 	db := utils.ConnectDB()
 	defer db.Close()
@@ -703,6 +747,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		}
 	case "remove2ndFactor":
 		remove2ndFactor(w, req)
+	case "checkUser":
+		checkUser(w, req)
 	case "add2ndFactor":
 		add2ndFactor(w, req)
 	case "postCred":
@@ -716,7 +762,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	case "deleteCred":
 		deleteCredentials(w, req)
 	case "checkCred":
-		checkCredendial(w, req)
+		checkCredendtial(w, req)
 	default:
 		response(w, false, "Command not valid", nil)
 	}

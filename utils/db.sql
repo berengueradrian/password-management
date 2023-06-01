@@ -54,3 +54,16 @@ create table users_data
         foreign key (user_id) references users (username)
             on delete cascade
 );
+
+-- credentials_shared table stores the AES key that encrypted the credentials data
+create table credentials_shared
+(
+    id        varbinary(256)  not null,
+    aes_key   varbinary(2048) not null,
+    shared_by varbinary(256)  not null,
+    constraint id
+        primary key (id),
+    constraint shared_by_fk
+        foreign key (shared_by) references users (username)
+            on delete cascade
+);

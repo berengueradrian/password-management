@@ -472,18 +472,19 @@ func UserMenu() {
 			"1. See stored credentials\n" +
 			"2. Store a new credential\n" +
 			"3. Modify an existent credential\n" +
-			"4. Delete a credential\n")
+			"4. Delete a credential\n" + 
+			"5. Share a credential\n")
 		if state.auth2 == "1" {
 			os.Stdout.WriteString(
-				"5. Remove 2nd authentication factor \n")
+				"6. Remove 2nd authentication factor \n")
 		} else {
 			os.Stdout.WriteString(
-				"5. Add 2nd authentication factor with TOTP code \n")
+				"6. Add 2nd authentication factor with TOTP code \n")
 		}
 		os.Stdout.WriteString(
-			"6. Log out\n\n" +
-				"- Introduce an option\n" +
-				"> ")
+			"7. Log out\n\n" +
+			"- Introduce an option\n" +
+			"> ")
 		// Read user input
 		command := bufio.NewScanner(os.Stdin)
 		if command.Scan() {
@@ -502,12 +503,15 @@ func UserMenu() {
 				DeleteCredential()
 			case "5":
 				fmt.Println()
+				ShareCredential()
+			case "6":
+				fmt.Println()
 				if state.auth2 == "1" {
 					Remove2ndFactor()
 				} else {
 					Add2ndFactor()
 				}
-			case "6":
+			case "7":
 				fmt.Println()
 				Logout()
 				logout = true
