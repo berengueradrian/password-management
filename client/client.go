@@ -423,6 +423,10 @@ func Remove2ndFactor() {
 func Add2ndFactor() {
 	key := make([]byte, 32)
 
+	// Key for response
+	key2 := make([]byte, 32)
+	rand.Read(key2)
+
 	// Obtain public key of client from private key
 	pkJson, err := json.Marshal(state.privKey.PublicKey)
 	chk(err)
@@ -431,6 +435,7 @@ func Add2ndFactor() {
 	// Prepare data
 	username_c := utils.Encode64(utils.Encrypt(state.user_id, key))
 	key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+	key2_c := utils.Encode64(utils.Encrypt(utils.Compress(key2), key))
 
 	// Digital signature
 	var digest []byte
@@ -445,6 +450,7 @@ func Add2ndFactor() {
 	data.Set("aes_key", key_c)
 	data.Set("signature", sign_c)
 	data.Set("pubkey", pkJson_c)
+	data.Set("aes_key_r", key2_c)
 	// POST request
 	response, err := state.client.PostForm("https://localhost:10443", data)
 	defer response.Body.Close()
@@ -462,11 +468,12 @@ func Add2ndFactor() {
 			fmt.Println("Error: QR code data is invalid")
 			return
 		}
-		qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
+		qrCodeData := utils.Decompress(utils.Decrypt(utils.Decode64(qrCodeStr), key2))
+		/* qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
 		if err != nil {
 			fmt.Println("Error decoding QR code data:", err)
 			return
-		}
+		} */
 		err = saveQRCodeToFile(qrCodeData)
 		if err != nil {
 			fmt.Println("Error saving QR code:", err)

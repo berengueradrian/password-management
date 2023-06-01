@@ -479,6 +479,7 @@ func add2ndFactor(w http.ResponseWriter, req *http.Request) {
 
 	// Get the AES key
 	aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+	aesKey_response := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("aes_key_r")), aesKey))
 
 	// Get digital signature data
 	var public_key *rsa.PublicKey
@@ -513,7 +514,7 @@ func add2ndFactor(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		data := map[string]interface{}{
-			"qr_code": code,
+			"qr_code": utils.Encode64(utils.Encrypt(utils.Compress(code), aesKey_response)),
 		}
 		response(w, true, "2nd factor added", data)
 	}
