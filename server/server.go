@@ -554,7 +554,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		selct, err := db.Query("SELECT * FROM users WHERE username = ?", username)
 		chk(err)
 		if selct.Next() {
-			response(w, false, "User registered already", nil)
+			response(w, false, "ERROR: The provided user is already registered", nil)
 			return
 		}
 

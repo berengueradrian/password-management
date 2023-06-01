@@ -239,21 +239,23 @@ func Register() {
 	json.NewDecoder(r.Body).Decode(&resp)
 
 	// Get the QR code and download it for the user
-	qrCodeStr, ok := resp.Data["qr_code"].(string)
-	if !ok {
-		fmt.Println("Error: QR code data is invalid")
-		return
-	}
-	qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
-	if err != nil {
-		fmt.Println("Error decoding QR code data:", err)
-		return
-	}
-	err = saveQRCodeToFile(qrCodeData)
-	if err != nil {
-		fmt.Println("Error saving QR code:", err)
-	} else {
-		fmt.Println("QR code saved successfully.")
+	if secondFactor == "y" && resp.Ok {
+		qrCodeStr, ok := resp.Data["qr_code"].(string)
+		if !ok {
+			fmt.Println("Error: QR code data is invalid")
+			return
+		}
+		qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
+		if err != nil {
+			fmt.Println("Error decoding QR code data:", err)
+			return
+		}
+		err = saveQRCodeToFile(qrCodeData)
+		if err != nil {
+			fmt.Println("Error saving QR code:", err)
+		} else {
+			fmt.Println("QR code saved successfully.")
+		}
 	}
 	fmt.Println("\n" + resp.Msg + ".\n")
 
@@ -489,7 +491,7 @@ func UserMenu() {
 			switch command.Text() {
 			case "1":
 				fmt.Println()
-				ListAllCredentials()
+				ListCredentials()
 			case "2":
 				fmt.Println()
 				CreateCredential()
