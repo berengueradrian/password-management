@@ -203,6 +203,9 @@ func Register() {
 	key := make([]byte, 32) // random key to encrypt the data with AES
 	rand.Read(key)
 
+	key2 := make([]byte, 32) // random key to encrypt the response with AES
+	rand.Read(key2)
+
 	// **Registration, user's data
 	data := url.Values{}        // structure to contain the values
 	data.Set("cmd", "register") // command (string)
@@ -222,6 +225,8 @@ func Register() {
 	data.Set("pubkey", utils.Encode64(utils.Encrypt(utils.Compress(pubJSON), key)))
 	// Private key
 	data.Set("privkey", utils.Encode64(utils.Encrypt(utils.Compress(pkJSON), keyData))) // in an actual client-server app, this would be stored in the client's local storage
+	// AES Key for response
+	data.Set("aes_key_r", utils.Encode64(utils.Encrypt(utils.Compress(key2), key)))
 	// AES key
 	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
 	// 2nd authentication factor
@@ -244,11 +249,12 @@ func Register() {
 			fmt.Println("Error: QR code data is invalid")
 			return
 		}
-		qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
+		qrCodeData := utils.Decompress(utils.Decrypt(utils.Decode64(qrCodeStr), key2))
+		/* qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
 		if err != nil {
 			fmt.Println("Error decoding QR code data:", err)
 			return
-		}
+		} */
 		err = saveQRCodeToFile(qrCodeData)
 		if err != nil {
 			fmt.Println("Error saving QR code:", err)
@@ -296,6 +302,9 @@ func Login() {
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
 	rand.Read(key)
+	// Generate random key to encrypt the data with AES in response
+	key2 := make([]byte, 32)
+	rand.Read(key2)
 	// Generate random session token
 	sessionToken := make([]byte, 16)
 	rand.Read(sessionToken)
@@ -308,6 +317,7 @@ func Login() {
 	data.Set("session_token", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(sessionToken)), key)))                       // Session token
 	data.Set("last_seen", utils.Encode64(utils.Encrypt(utils.Compress([]byte(time.Now().Format("2006-01-02 15:04:05"))), key))) // Last seen
 	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))                                 // AES Key
+	data.Set("aes_key_r", utils.Encode64(utils.Encrypt(utils.Compress(key2), key)))                                             // AES Key response
 
 	// POST request
 	r, err := client.PostForm("https://localhost:10443", data)
@@ -330,21 +340,45 @@ func Login() {
 		state.privKey = private_key
 		// Store in state so the user menu knows to delete or create a 2nd auth factor
 		state.auth2 = resp.Data["totp_auth"].(string)
+		state.auth2 = string(utils.Decompress(utils.Decrypt(utils.Decode64(state.auth2), key2)))
 
-		if resp.Data["totp_auth"] == "1" {
+		if state.auth2 == "1" {
 			// Show response
 			fmt.Println("\n Correct credentials. \n")
 			for i := 3; i >= 1; i-- {
+				// Key
 				key_2nd := make([]byte, 32)
 				rand.Read(key_2nd)
+
+				// Public key
+				pkJson, err := json.Marshal(state.privKey.PublicKey)
+				chk(err)
+				pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), key_2nd))
+
+				// Collect data
 				fmt.Print("- Introduce your TOTP code: ")
 				fmt.Scan(&totpCode)
+
+				// Prepare data
+				username_c := utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key_2nd))
+				totpCode_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(totpCode)), key_2nd))
+				key_2nd_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key_2nd), state.srvPubKey))
+
+				// Digital signature
+				var digest []byte
+				digest = utils.HashSHA512([]byte("validateTOTP" + username_c + totpCode_c + pkJson_c + key_2nd_c + utils.GetTime()))
+				sign := utils.SignRSA(digest, state.privKey)
+				sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), key_2nd))
+
 				// Data for validating the totp code
 				data_2nd := url.Values{}
 				data_2nd.Set("cmd", "validateTOTP")
-				data_2nd.Set("user", utils.Encode64(utils.Encrypt(utils.HashSHA512([]byte(userScan)), key_2nd)))
-				data_2nd.Set("totp_code", utils.Encode64(utils.Encrypt(utils.Compress([]byte(totpCode)), key_2nd)))
-				data_2nd.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key_2nd), state.srvPubKey)))
+				data_2nd.Set("user", username_c)
+				data_2nd.Set("totp_code", totpCode_c)
+				data_2nd.Set("aes_key", key_2nd_c)
+				data_2nd.Set("pubkey", pkJson_c)
+				data_2nd.Set("signature", sign_c)
+
 				// POST request
 				response, err := client.PostForm("https://localhost:10443", data_2nd)
 				defer response.Body.Close()
@@ -363,7 +397,7 @@ func Login() {
 					fmt.Println("**Error, incorrect TOTP, you have " + strconv.Itoa(i-1) + " attempts left. \n")
 				} else {
 					// Show response correct
-					fmt.Println("\n- Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
+					//fmt.Println("\n- Check the QR code that was downloaded and add it to any authenticator like Google Authenticator.\n")
 					fmt.Println("\n" + resp2.Msg + " Welcome " + userScan + "." + "\n")
 					break
 				}
@@ -383,11 +417,31 @@ func Login() {
 // Remove the 2nd authentication factor
 func Remove2ndFactor() {
 	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	chk(err)
+	pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), key))
+
+	// Prepare data
+	username_c := utils.Encode64(utils.Encrypt(state.user_id, key))
+	key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+
+	// Digital signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte("remove2ndFactor" + username_c + pkJson_c + key_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), key))
+
 	// Set request data
 	data := url.Values{}
 	data.Set("cmd", "remove2ndFactor")
-	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
-	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
+	data.Set("username", username_c)
+	data.Set("aes_key", key_c)
+	data.Set("pubkey", pkJson_c)
+	data.Set("signature", sign_c)
+
 	// POST request
 	response, err := state.client.PostForm("https://localhost:10443", data)
 	defer response.Body.Close()
@@ -410,11 +464,36 @@ func Remove2ndFactor() {
 // Add 2nd authentication factor
 func Add2ndFactor() {
 	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Key for response
+	key2 := make([]byte, 32)
+	rand.Read(key2)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	chk(err)
+	pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), key))
+
+	// Prepare data
+	username_c := utils.Encode64(utils.Encrypt(state.user_id, key))
+	key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+	key2_c := utils.Encode64(utils.Encrypt(utils.Compress(key2), key))
+
+	// Digital signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte("add2ndFactor" + username_c + pkJson_c + key_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), key))
+
 	// Set request data
 	data := url.Values{}
 	data.Set("cmd", "add2ndFactor")
-	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
-	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
+	data.Set("username", username_c)
+	data.Set("aes_key", key_c)
+	data.Set("signature", sign_c)
+	data.Set("pubkey", pkJson_c)
+	data.Set("aes_key_r", key2_c)
 	// POST request
 	response, err := state.client.PostForm("https://localhost:10443", data)
 	defer response.Body.Close()
@@ -432,11 +511,12 @@ func Add2ndFactor() {
 			fmt.Println("Error: QR code data is invalid")
 			return
 		}
-		qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
+		qrCodeData := utils.Decompress(utils.Decrypt(utils.Decode64(qrCodeStr), key2))
+		/* qrCodeData, err := base64.StdEncoding.DecodeString(qrCodeStr)
 		if err != nil {
 			fmt.Println("Error decoding QR code data:", err)
 			return
-		}
+		} */
 		err = saveQRCodeToFile(qrCodeData)
 		if err != nil {
 			fmt.Println("Error saving QR code:", err)

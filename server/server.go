@@ -113,7 +113,6 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	// Verify signature
 	var digest []byte
 	if req.Form.Get("filename") != "" {
-		// Verify signature
 		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
 			req.Form.Get("filename") + req.Form.Get("filecontents") + req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
 			req.Form.Get("password") + req.Form.Get("pubkey") + req.Form.Get("cred_id_pass") + req.Form.Get("cred_id_pass_orig") + utils.GetTime()))
@@ -476,8 +475,20 @@ func add2ndFactor(w http.ResponseWriter, req *http.Request) {
 
 	// Get the AES key
 	aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
-	// Get the username
+	aesKey_response := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("aes_key_r")), aesKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aesKey))
 	username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("username") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	totpKey, err := generateSecretKey()
 	totp_key := utils.EncryptRSA(utils.Compress([]byte(totpKey)), &state.privKey.PublicKey) // totp key
@@ -499,7 +510,7 @@ func add2ndFactor(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		data := map[string]interface{}{
-			"qr_code": code,
+			"qr_code": utils.Encode64(utils.Encrypt(utils.Compress(code), aesKey_response)),
 		}
 		response(w, true, "2nd factor added", data)
 	}
@@ -513,8 +524,20 @@ func remove2ndFactor(w http.ResponseWriter, req *http.Request) {
 
 	// Get the AES key
 	aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
-	// Get the username
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aesKey))
 	username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("username") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
 	var totpNil string
 	_, err := db.Query("UPDATE users SET totp_key=? WHERE username=?", utils.EncryptRSA(utils.Compress([]byte(totpNil)), &state.privKey.PublicKey), username)
 	if err != nil {
@@ -544,6 +567,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 
 		// Get the AES key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+		// Get the AES key for response
+		aesKey2 := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("aes_key_r")), aesKey))
 
 		// Check if the user is already registered
 		username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
@@ -592,9 +617,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		defer insert.Close() // close the insert statement
-		data := map[string]interface{}{
-			"username": u.Name,
-		}
+		data := map[string]interface{}{}
 		// Generate QR code if the user chose the 2nd auth factor
 		if second == "1" {
 			code, err := generateQRCode(totpKey)
@@ -602,13 +625,15 @@ func handler(w http.ResponseWriter, req *http.Request) {
 				response(w, false, "**Error generating QR code", nil)
 				return
 			}
-			data["qr_code"] = code
+			data["qr_code"] = utils.Encode64(utils.Encrypt(utils.Compress(code), aesKey2))
 		}
 		response(w, true, "User registered", data)
 
 	case "login":
 		// Decrypt AES Key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+		// Decrypt AES Key response
+		aesKey_response := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("aes_key_r")), aesKey))
 
 		// Get user data
 		u := user{}
@@ -651,7 +676,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			if bytes.Equal(providedPass, password) {
 				data = map[string]interface{}{
 					"privkey":   utils.Encode64(private_key),
-					"totp_auth": secondFactor,
+					"totp_auth": utils.Encode64(utils.Encrypt(utils.Compress([]byte(secondFactor)), aesKey_response)),
 				}
 				loginOk = true
 				loginMsg = "Login correct."
@@ -671,16 +696,30 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			response(w, loginOk, loginMsg, data)
 			return
 		} else {
-			response(w, false, "User does not exist", data)
+			response(w, false, "User does not exist", nil)
 			return
 		}
 	case "validateTOTP":
 		// Decrypt AES Key
 		aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
 
+		// Get DS data
+		var public_key *rsa.PublicKey
+		username := utils.Decrypt(utils.Decode64(req.Form.Get("user")), aesKey)
+		//totpcode := utils.Decrypt(utils.Decode64(req.Form.Get("totp_code")), aesKey)
+		signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aesKey))
+		pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))
+		_error := json.Unmarshal(pubkey, &public_key)
+		chk(_error)
+
+		// Verify signature
+		var digest []byte
+		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("user") + req.Form.Get("totp_code") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+		_ = utils.VerifyRSA(digest, signature, public_key)
+
 		// Get user data
 		u := user{}
-		u.Name = utils.Decrypt(utils.Decode64(req.Form.Get("user")), aesKey)
+		u.Name = username
 		db := utils.ConnectDB()
 		defer db.Close()
 		result, err := db.Query("SELECT totp_key FROM users where username = ?", u.Name)
