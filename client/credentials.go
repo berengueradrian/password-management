@@ -73,6 +73,127 @@ func checkAlias(alias string) []byte {
 	return nil
 }
 
+func GetCredentialInformation(alias string) server.Credential {
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+
+	// Prepare data
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+	user_id_c := utils.Encode64(utils.Encrypt(utils.Compress(state.user_id), keycom))
+
+	// Digital signature
+	digest2 := utils.HashSHA512([]byte("getAllCred" + user_id_c + pubkey_c + keycom_c + utils.GetTime()))
+	sign2 := utils.SignRSA(digest2, state.privKey)
+	sign2_c := utils.Encode64(utils.Encrypt(utils.Compress(sign2), keycom))
+
+	// Set values
+	data2 := url.Values{}
+	data2.Set("cmd", "getAllCred")
+	data2.Set("user_id", user_id_c)
+	data2.Set("pubkey", pubkey_c)
+	data2.Set("aes_key", keycom_c)
+	data2.Set("signature", sign2_c)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data2)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Finish request
+	r.Body.Close()
+
+	// Filter data
+	var id_password, site_server, username_server, aeskey, alias_server []byte
+	for _, c := range resp.Data["credentials"].([]interface{}) {
+		aux := c.(map[string]interface{})
+		alias_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Alias"].(string)), state.kData))
+		if alias == string(alias_server) {
+			id_password = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
+			site_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Site"].(string)), state.kData))
+			username_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Username"].(string)), state.kData))
+			aeskey = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Key"].(string)), state.kData))
+			break
+		}
+	}
+
+	// Response
+	cred := server.Credential{}
+	cred.Site = string(site_server)
+	cred.Username = string(username_server)
+	cred.Alias = alias
+	cred.Key = string(aeskey)
+	cred.Credential_id = string(id_password)
+
+	return cred
+}
+
+func GetPasswordInformation(id_password string, aeskey []byte) server.Credential {
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Public key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+
+	// Prepare data
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+	id_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(utils.Encode64([]byte(id_password)))), keycom))
+
+	// Digital signature
+	digest := utils.HashSHA512([]byte("getAllPass" + id_password_c + pubkey_c + keycom_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom))
+
+	// Set values
+	data := url.Values{}
+	data.Set("cmd", "getAllPass")
+	data.Set("identifiers", id_password_c)
+	data.Set("pubkey", pubkey_c)
+	data.Set("aes_key", keycom_c)
+	data.Set("signature", sign_c)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	chk(err)
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Finish request
+	r.Body.Close()
+
+	// Filter data
+	var pass_server, filename_server, filecontents_server []byte
+	for _, c := range resp.Data["passwords"].([]interface{}) {
+		aux := c.(map[string]interface{})
+		//id_pass_server := utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
+		id_pass_server := aux["Credential_id"].(string)
+		id_pass_server = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(id_pass_server), state.privKey)))
+		if utils.Encode64([]byte(id_password)) == id_pass_server {
+			pass_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), aeskey))
+			if aux["Filename"].(string) != "" {
+				filename_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Filename"].(string)), state.kData))
+				filecontents_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["FileContents"].(string)), state.kData))
+			}
+		}
+	}
+
+	cred := server.Credential{}
+	cred.Password = string(pass_server)
+	cred.Filename = string(filename_server)
+	cred.FileContents = string(filecontents_server)
+
+	return cred
+}
+
 func CreateCredential() {
 	var site, alias, username, password, path, filename, extension, addFile string
 	var fileContents []byte
@@ -259,127 +380,26 @@ func ListOneCredential() {
 		}
 	}
 
-	// GET KEY AND PASSWORD ID
-
-	// Generate communication aes key
-	keycom := make([]byte, 32)
-	rand.Read(keycom)
-
-	// Obtain public key of client from private key
-	pkJson, err := json.Marshal(state.privKey.PublicKey)
-	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
-
-	// Prepare data
-	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
-	user_id_c := utils.Encode64(utils.Encrypt(utils.Compress(state.user_id), keycom))
-
-	// Digital signature
-	digest2 := utils.HashSHA512([]byte("getAllCred" + user_id_c + pubkey_c + keycom_c + utils.GetTime()))
-	sign2 := utils.SignRSA(digest2, state.privKey)
-	sign2_c := utils.Encode64(utils.Encrypt(utils.Compress(sign2), keycom))
-
-	// Set values
-	data2 := url.Values{}
-	data2.Set("cmd", "getAllCred")
-	data2.Set("user_id", user_id_c)
-	data2.Set("pubkey", pubkey_c)
-	data2.Set("aes_key", keycom_c)
-	data2.Set("signature", sign2_c)
-
-	// POST request
-	r, err := state.client.PostForm("https://localhost:10443", data2)
-	chk(err)
-
-	// Obtain response from server
-	resp := server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
-
-	// Finish request
-	r.Body.Close()
-
-	// Filter data
-	var id_password, site_server, username_server, aeskey, alias_server []byte
-	for _, c := range resp.Data["credentials"].([]interface{}) {
-		aux := c.(map[string]interface{})
-		alias_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Alias"].(string)), state.kData))
-		if alias == string(alias_server) {
-			id_password = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
-			site_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Site"].(string)), state.kData))
-			username_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Username"].(string)), state.kData))
-			aeskey = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Key"].(string)), state.kData))
-			break
-		}
-	}
-
-	// GET PASWORD INFORMATION (USED IN CASE PASSWORD IS NOT MODIFIERD)
-
-	// Generate communication aes key
-	keycom = make([]byte, 32)
-	rand.Read(keycom)
-
-	// Public key
-	pubkey_c = utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
-
-	// Prepare data
-	keycom_c = utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
-	id_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(utils.Encode64(id_password))), keycom))
-
-	// Digital signature
-	digest := utils.HashSHA512([]byte("getAllPass" + id_password_c + pubkey_c + keycom_c + utils.GetTime()))
-	sign := utils.SignRSA(digest, state.privKey)
-	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom))
-
-	// Set values
-	data := url.Values{}
-	data.Set("cmd", "getAllPass")
-	data.Set("identifiers", id_password_c)
-	data.Set("pubkey", pubkey_c)
-	data.Set("aes_key", keycom_c)
-	data.Set("signature", sign_c)
-
-	// POST request
-	r, err = state.client.PostForm("https://localhost:10443", data)
-	chk(err)
-
-	// Obtain response from server
-	resp = server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
-
-	// Finish request
-	r.Body.Close()
-
-	// Filter data
-	var pass_server, filename_server, filecontents_server []byte
-	for _, c := range resp.Data["passwords"].([]interface{}) {
-		aux := c.(map[string]interface{})
-		//id_pass_server := utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
-		id_pass_server := aux["Credential_id"].(string)
-		id_pass_server = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(id_pass_server), state.privKey)))
-		if utils.Encode64(id_password) == id_pass_server {
-			pass_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), aeskey))
-			if aux["Filename"].(string) != "" {
-				filename_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Filename"].(string)), state.kData))
-				filecontents_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["FileContents"].(string)), state.kData))
-			}
-		}
-	}
+	// Get credential and password information
+	cred := GetCredentialInformation(alias)
+	cred_pass := GetPasswordInformation(cred.Credential_id, []byte(cred.Key))
 
 	// Prompt information
-	fmt.Println("> Alias: " + string(alias_server))
-	fmt.Println("  Site: " + string(site_server))
-	fmt.Println("  Username: " + string(username_server))
-	fmt.Println("  Password: " + string(pass_server))
-	if string(filename_server) != "" {
-		fmt.Println("  Filename: " + string(filename_server))
+	fmt.Println("> Alias: " + string(cred.Alias))
+	fmt.Println("  Site: " + string(cred.Site))
+	fmt.Println("  Username: " + string(cred.Username))
+	fmt.Println("  Password: " + string(cred_pass.Password))
+	if string(cred_pass.Filename) != "" {
+		fmt.Println("  Filename: " + string(cred_pass.Filename))
 	}
 	fmt.Println()
-	if string(filename_server) != "" {
+	if string(cred_pass.Filename) != "" {
 		download := ""
 		fmt.Print("- Do you want to download the file? (y/n): ")
 		fmt.Scan(&download)
 		fmt.Println()
 		if download == "y" {
-			DownloadFile(string(filename_server), filecontents_server)
+			DownloadFile(cred_pass.Filename, []byte(cred_pass.FileContents))
 			fmt.Println("\nFile downloaded successfully\n")
 		}
 	}
@@ -586,7 +606,7 @@ func DownloadFile(filename string, fileContents []byte) {
 	chk(err)
 }
 
-func CheckCredential(alias string) bool {
+/* func CheckCredential(alias string) bool {
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
 	rand.Read(key)
@@ -629,7 +649,7 @@ func CheckCredential(alias string) bool {
 		return false
 	}
 	return true
-}
+} */
 
 func ModifyCredential() {
 	var alias, newAlias, newSite, newUsername, newPassword, newFilename, path, extension string
@@ -639,7 +659,8 @@ func ModifyCredential() {
 	var id_alias []byte
 	var err error
 
-	// Collect user data
+	// COLLECT USER DATA
+
 	fmt.Print("-- Modify a credential --\n")
 
 	// Check alias existance
@@ -722,117 +743,17 @@ func ModifyCredential() {
 		}
 	}
 
-	// GET KEY AND PASSWORD ID
+	// GET CREDS AND PASSWORD INFORMATION
 
-	// Generate communication aes key
-	keycom2 := make([]byte, 32)
-	rand.Read(keycom2)
-
-	// Obtain public key of client from private key
-	pkJson, err := json.Marshal(state.privKey.PublicKey)
-	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom2))
-
-	// Prepare data
-	keycom2_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom2), state.srvPubKey))
-	user_id_c := utils.Encode64(utils.Encrypt(utils.Compress(state.user_id), keycom2))
-
-	// Digital signature
-	digest2 := utils.HashSHA512([]byte("getAllCred" + user_id_c + pubkey_c + keycom2_c + utils.GetTime()))
-	sign2 := utils.SignRSA(digest2, state.privKey)
-	sign2_c := utils.Encode64(utils.Encrypt(utils.Compress(sign2), keycom2))
-
-	// Set values
-	data2 := url.Values{}
-	data2.Set("cmd", "getAllCred")
-	data2.Set("user_id", user_id_c)
-	data2.Set("pubkey", pubkey_c)
-	data2.Set("aes_key", keycom2_c)
-	data2.Set("signature", sign2_c)
-
-	// POST request
-	r, err := state.client.PostForm("https://localhost:10443", data2)
-	chk(err)
-
-	// Obtain response from server
-	resp := server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
-
-	// Finish request
-	r.Body.Close()
-
-	// Filter data
-	var id_password, site_server, username_server, aeskey []byte
-	for _, c := range resp.Data["credentials"].([]interface{}) {
-		aux := c.(map[string]interface{})
-		alias_server := utils.Decompress(utils.Decrypt(utils.Decode64(aux["Alias"].(string)), state.kData))
-		if alias == string(alias_server) {
-			id_password = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
-			site_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Site"].(string)), state.kData))
-			username_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Username"].(string)), state.kData))
-			aeskey = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Key"].(string)), state.kData))
-			break
-		}
-	}
-
-	// GET PASWORD INFORMATION (USED IN CASE PASSWORD IS NOT MODIFIERD)
-
-	// Generate communication aes key
-	keycom := make([]byte, 32)
-	rand.Read(keycom)
-
-	// Public key
-	pubkey_c = utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
-
-	// Prepare data
-	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
-	id_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(utils.Encode64(id_password))), keycom))
-
-	// Digital signature
-	digest := utils.HashSHA512([]byte("getAllPass" + id_password_c + pubkey_c + keycom_c + utils.GetTime()))
-	sign := utils.SignRSA(digest, state.privKey)
-	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom))
-
-	// Set values
-	data := url.Values{}
-	data.Set("cmd", "getAllPass")
-	data.Set("identifiers", id_password_c)
-	data.Set("pubkey", pubkey_c)
-	data.Set("aes_key", keycom_c)
-	data.Set("signature", sign_c)
-
-	// POST request
-	r, err = state.client.PostForm("https://localhost:10443", data)
-	chk(err)
-
-	// Obtain response from server
-	resp = server.Resp{}
-	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
-
-	// Finish request
-	r.Body.Close()
-
-	// Filter data
-	var pass_server, filename_server, filecontents_server []byte
-	for _, c := range resp.Data["passwords"].([]interface{}) {
-		aux := c.(map[string]interface{})
-		//id_pass_server := utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData))
-		id_pass_server := aux["Credential_id"].(string)
-		id_pass_server = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(id_pass_server), state.privKey)))
-		if utils.Encode64(id_password) == id_pass_server {
-			pass_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Password"].(string)), aeskey))
-			if aux["Filename"].(string) != "" {
-				filename_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["Filename"].(string)), state.kData))
-				filecontents_server = utils.Decompress(utils.Decrypt(utils.Decode64(aux["FileContents"].(string)), state.kData))
-			}
-		}
-	}
+	cred := GetCredentialInformation(alias)
+	cred_pass := GetPasswordInformation(cred.Credential_id, []byte(cred.Key))
 
 	// MODIFY DATA
 
 	// Generate random key to encrypt the data with AES
 	key := make([]byte, 32)
 	rand.Read(key)
-	keycom = make([]byte, 32)
+	keycom := make([]byte, 32)
 	rand.Read(keycom)
 
 	// Select data to be sent
@@ -840,21 +761,22 @@ func ModifyCredential() {
 		newAlias = alias
 	}
 	if changeUser != "y" {
-		newUsername = string(username_server)
+		newUsername = string(cred.Username)
 	}
 	if changeSite != "y" {
-		newSite = string(site_server)
+		newSite = string(cred.Site)
 	}
 	if changePass != "y" {
-		newPassword = string(pass_server)
-		key = aeskey
+		newPassword = string(cred_pass.Password)
+		key = []byte(cred.Key)
 	}
 	if changeFile != "y" {
-		newFilename = string(filename_server)
-		fileContents = filecontents_server
+		newFilename = string(cred_pass.Filename)
+		fileContents = []byte(cred_pass.FileContents)
 	}
 
 	// Prepare data
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
 	newAlias_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newAlias)), state.kData))
 	newSite_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newSite)), state.kData))
 	newUsername_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newUsername)), state.kData))
@@ -862,21 +784,21 @@ func ModifyCredential() {
 	newFileContents_c := utils.Encode64(utils.Encrypt(utils.Compress(fileContents), state.kData))
 	newPassword_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(newPassword)), key))
 	aeskey_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(key)), state.kData))
-	keycom_c = utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
 	id_alias_c := utils.Encode64(utils.Encrypt(utils.Compress(id_alias), keycom))
-	id_password_c = utils.Encode64(utils.Encrypt(utils.Compress([]byte(utils.Encode64((id_password)))), keycom))
-	pubkey_c = utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+	id_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(utils.Encode64(([]byte(cred.Credential_id))))), keycom))
+	pubkey_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
 	changePassServer_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(changePassServer)), keycom))
 	changeFileServer_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(changeFileServer)), keycom))
 
 	// Digital signature
-	digest = utils.HashSHA512([]byte("putCred" + newAlias_c + newSite_c +
+	digest := utils.HashSHA512([]byte("putCred" + newAlias_c + newSite_c +
 		newUsername_c + newFilename_c + aeskey_c + keycom_c + id_alias_c + id_password_c + pubkey_c +
 		newPassword_c + changePassServer_c + changeFileServer_c + utils.GetTime()))
-	sign = utils.SignRSA(digest, state.privKey)
+	sign := utils.SignRSA(digest, state.privKey)
 
 	// Set request values
-	data = url.Values{}
+	data := url.Values{}
 	data.Set("cmd", "putCred")
 	data.Set("newAlias", newAlias_c)
 	data.Set("newSite", newSite_c)
