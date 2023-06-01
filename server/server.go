@@ -117,7 +117,6 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	// Verify signature
 	var digest []byte
 	if req.Form.Get("filename") != "" {
-		// Verify signature
 		digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("alias") + req.Form.Get("site") + req.Form.Get("username") +
 			req.Form.Get("filename") + req.Form.Get("filecontents") + req.Form.Get("aes_key") + req.Form.Get("cred_id") + req.Form.Get("user_id") +
 			req.Form.Get("password") + req.Form.Get("pubkey") + req.Form.Get("cred_id_pass") + req.Form.Get("cred_id_pass_orig") + utils.GetTime()))
@@ -480,8 +479,19 @@ func add2ndFactor(w http.ResponseWriter, req *http.Request) {
 
 	// Get the AES key
 	aesKey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
-	// Get the username
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aesKey))
 	username := utils.Decrypt(utils.Decode64(req.Form.Get("username")), aesKey)
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("username") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
 
 	totpKey, err := generateSecretKey()
 	totp_key := utils.EncryptRSA(utils.Compress([]byte(totpKey)), &state.privKey.PublicKey) // totp key

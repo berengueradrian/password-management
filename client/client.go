@@ -422,11 +422,29 @@ func Remove2ndFactor() {
 // Add 2nd authentication factor
 func Add2ndFactor() {
 	key := make([]byte, 32)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	chk(err)
+	pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), key))
+
+	// Prepare data
+	username_c := utils.Encode64(utils.Encrypt(state.user_id, key))
+	key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+
+	// Digital signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte("add2ndFactor" + username_c + pkJson_c + key_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), key))
+
 	// Set request data
 	data := url.Values{}
 	data.Set("cmd", "add2ndFactor")
-	data.Set("username", utils.Encode64(utils.Encrypt(state.user_id, key)))
-	data.Set("aes_key", utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey)))
+	data.Set("username", username_c)
+	data.Set("aes_key", key_c)
+	data.Set("signature", sign_c)
+	data.Set("pubkey", pkJson_c)
 	// POST request
 	response, err := state.client.PostForm("https://localhost:10443", data)
 	defer response.Body.Close()
