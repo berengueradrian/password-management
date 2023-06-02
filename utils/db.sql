@@ -48,10 +48,14 @@ create table users_data
     user_id  varbinary(256) not null,
     alias varbinary(256) null,
     credential_id varbinary(256) null,
+    shared_id varbinary(256) null,
     constraint id
         primary key (id),
     constraint user_id
         foreign key (user_id) references users (username)
+            on delete cascade
+    constraint shared_id
+        foreign key (shared_id) references credentials_shared (id)
             on delete cascade
 );
 

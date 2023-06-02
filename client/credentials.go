@@ -16,6 +16,7 @@ import (
 	"password-management/utils"
 	"path/filepath"
 	"strings"
+	"crypto/rsa"
 )
 
 type File struct {
@@ -404,6 +405,222 @@ func ListOneCredential() {
 			fmt.Println("\nFile downloaded successfully\n")
 		}
 	}
+}
+
+func ListSharedCredentials() {
+	// RETRIEVE CREDENTIALS DATA
+	anyFile := false
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+
+	// Generate random key to encrypt the data with AES
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Prepare data
+	user_id := utils.Encode64(utils.Encrypt(utils.Compress([]byte(state.user_id)), key))
+	pubkey := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key))
+	aeskey := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+
+	// Digital signature
+	digest := utils.HashSHA512([]byte("getAllCred" + user_id + pubkey + aeskey + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+
+	// Set request data
+	data := url.Values{}
+	data.Set("cmd", "getAllCred")
+	data.Set("user_id", user_id)
+	data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), key)))
+	data.Set("pubkey", pubkey)
+	data.Set("aes_key", aeskey)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	if err != nil {
+		fmt.Println("ERROR with the server")
+		return
+	}
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+	// Adapt credentials type if exists any credential in the response
+	var creds []server.Credential
+	var identifiers []string
+	cred := server.Credential{}
+
+	if resp.Data["credentials"] == nil {
+		fmt.Println("No credentials were stored\n")
+	} else {
+		for _, c := range resp.Data["credentials"].([]interface{}) {
+			// Get data
+			aux := c.(map[string]interface{})
+			if aux["Shared"] != "" {
+				pkJson, err := json.Marshal(state.privKey.PublicKey)
+
+				// Generate random key to encrypt the data with AES
+				key := make([]byte, 32)
+				rand.Read(key)
+
+				// Prepare data
+				user_id := utils.Encode64(utils.Encrypt(utils.Compress([]byte(state.user_id)), key))
+				pubkey := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key))
+				aeskey := utils.Encode64(utils.EncryptRSA(utils.Compress(key), state.srvPubKey))
+
+				// Digital signature
+				digest := utils.HashSHA512([]byte("getCredShared" + pubkey + aeskey + utils.GetTime()))
+				sign := utils.SignRSA(digest, state.privKey)
+
+				// Set request data
+				data := url.Values{}
+				data.Set("cmd", "getCredShared")
+				data.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign), key)))
+				data.Set("pubkey", pubkey)
+				data.Set("aes_key", aeskey)
+
+				// POST request
+				r, err := state.client.PostForm("https://localhost:10443", data)
+				if err != nil {
+					fmt.Println("ERROR with the server")
+					return
+				}
+
+				// Obtain response from server
+				resp := server.Resp{}
+				json.NewDecoder(r.Body).Decode(&resp) // Decode the response to use its fields later on
+
+				for _, cre := range resp.Data["credentials_shared"].([]interface{}) {
+					aux := cre.(map[string]interface{})
+					shared_id := string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Shared"].(string)), state.privKey.PublicKey)))
+
+					if shared_id == utils.Decode64(aux["Id"]) {
+						anyFile = true
+						// Get data
+						cred.Alias = aux["Alias"].(string)
+						cred.Site = aux["Site"].(string)
+						cred.Username = aux["Username"].(string)
+						cred.Key = aux["Key"].(string)
+						cred_id := string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData)))
+						// Decrypted identifiers of credentials
+						cred.Credential_id = cred_id
+						identifiers = append(identifiers, utils.Encode64([]byte(cred.Credential_id)))
+						creds = append(creds, cred)
+					}
+				}
+				cred.Alias = aux["Alias"].(string)
+				cred.Site = aux["Site"].(string)
+				cred.Username = aux["Username"].(string)
+				cred.Key = aux["Key"].(string)
+				cred_id = string(utils.Decompress(utils.Decrypt(utils.Decode64(aux["Credential_id"].(string)), state.kData)))
+				shared := aux["Shared"].(string)
+				// Decrypted identifiers of credentials
+				cred.Credential_id = cred_id
+				/* fmt.Println("ids")
+				fmt.Println(utils.Encode64([]byte(cred.Credential_id))) */
+				identifiers = append(identifiers, utils.Encode64([]byte(cred.Credential_id)))
+
+				creds = append(creds, cred)
+			}
+		}
+
+		// OBTAIN PASSWORDS FOR CREDENTIALS
+		// Generate random key to encrypt the data with AES
+		key2 := make([]byte, 32)
+		rand.Read(key2)
+
+		// Prepare data
+		identifiers_string := strings.Join(identifiers, " ")
+		identifiers_string_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(identifiers_string)), key2))
+		pubkey2 := utils.Encode64(utils.Encrypt(utils.Compress([]byte(pkJson)), key2))
+		aeskey2 := utils.Encode64(utils.EncryptRSA(utils.Compress(key2), state.srvPubKey))
+
+		// Digital signature
+		digest2 := utils.HashSHA512([]byte("getAllPass" + identifiers_string_c + pubkey2 + aeskey2 + utils.GetTime()))
+		sign2 := utils.SignRSA(digest2, state.privKey)
+
+		// Set request data
+		data2 := url.Values{}
+		data2.Set("cmd", "getAllPass")
+		data2.Set("identifiers", identifiers_string_c)
+		data2.Set("signature", utils.Encode64(utils.Encrypt(utils.Compress(sign2), key2)))
+		data2.Set("pubkey", pubkey2)
+		data2.Set("aes_key", aeskey2)
+
+		// POST request
+		r2, err2 := state.client.PostForm("https://localhost:10443", data2)
+		chk(err2)
+
+		// Obtain response from server
+		resp2 := server.Resp{}
+		json.NewDecoder(r2.Body).Decode(&resp2)
+
+		// Associate passwords with credentials
+		files := make(map[string]File)
+		if resp2.Data["passwords"] != nil {
+			for _, p := range resp2.Data["passwords"].([]interface{}) {
+				aux := p.(map[string]interface{})
+				//fmt.Println("passs")
+				for i := range creds {
+					cred_id := aux["Credential_id"].(string)
+					cred_id = string(utils.Decompress(utils.DecryptRSA(utils.Decode64(cred_id), state.privKey)))
+					//fmt.Println(utils.Encode64([]byte(creds[i].Credential_id)))
+					//fmt.Println(utils.Encode64([]byte(cred_id)))
+					if utils.Encode64([]byte(creds[i].Credential_id)) == cred_id {
+						creds[i].Password = aux["Password"].(string)
+						creds[i].Filename = aux["Filename"].(string)
+						if creds[i].Filename != "" {
+							anyFile = true
+							mapAlias := string(utils.Decompress(utils.Decrypt(utils.Decode64(creds[i].Alias), state.kData)))
+							files[mapAlias] = File{
+								Name:     creds[i].Filename,
+								Contents: aux["FileContents"].(string),
+								Key: creds[i].Key,
+							}
+						}
+					}
+				}
+			}
+		}
+		r2.Body.Close()
+
+		// Show credentials
+		if len(creds) != 0 {
+			fmt.Println("\n" + resp.Msg + "\n")
+			for _, c := range creds {
+				showCredential(c)
+			}
+			if anyFile {
+				download := ""
+				fmt.Print("- Do you want to download any file? (y/n): ")
+				fmt.Scan(&download)
+				if download == "y" {
+					for {
+						alias := ""
+						fmt.Print("- Enter the credential alias of the file to download: ")
+						fmt.Scan(&alias)
+						file, ok := files[alias]
+						if ok {
+							aesKey := utils.Decompress(utils.Decrypt(utils.Decode64(file.Key), state.kData))
+							fileName := string(utils.Decompress(utils.Decrypt(utils.Decode64(file.Name), aesKey)))
+							fileContents := utils.Decompress(utils.Decrypt(utils.Decode64(file.Contents), aesKey))
+							DownloadFile(fileName, fileContents)
+							fmt.Println("\nFile downloaded successfully")
+							break
+						} else {
+							fmt.Println("ERROR: Alias incorrect, try again")
+						}
+					}
+				}
+				fmt.Println()
+			}
+		} else {
+			fmt.Println("No credentials were stored\n")
+		}
+	}
+
+	// Finish request
+	r.Body.Close()	
 }
 
 func ListAllCredentials() {
@@ -937,7 +1154,7 @@ func DeleteCredential() {
 	//UserMenu()
 }
 
-func checkUser(username string) []byte {
+func checkUser(username string) string {
 	// Generate random key to encrypt the data with AES
 	keycom := make([]byte, 32)
 	rand.Read(keycom)
@@ -976,11 +1193,16 @@ func checkUser(username string) []byte {
 	defer r.Body.Close()
 
 	// Check alias
-	public := utils.Decode64(resp.Data["public_key"].(string))
-	if public != nil {
-		return []byte(public)
+	tryPublic, check := resp.Data["public_key"].(string)
+	if !check {
+		return ""
 	}
-	return nil
+	public := string(utils.Decode64(tryPublic))
+	fmt.Println("Public key of user: " + public)
+	if public != "" {
+		return public
+	}
+	return ""
 }
 
 // Shares credentials
@@ -1002,49 +1224,116 @@ func ShareCredential() {
 	}
 
 	var user_to_share string
-	var user_to_share_public []byte
+	var user_to_share_public string
 	for {
 		fmt.Print("- Enter the username you want to share the password with: ")
 		fmt.Scan(&user_to_share)
 		user_to_share_public = checkUser(user_to_share)
-		if user_to_share_public != nil {
+		if user_to_share_public != "" {
 			break
 		} else {
 			fmt.Println("ERROR: User not found. Try again.\n")
 		}
 	}
 
-	credential_to_share := GetPasswordInformation(string(id_cred), aes_key) // server.Credential -> password filename & filecontents decrypted
 	user_data_share := GetCredentialInformation(alias) // server.Credential -> site username alias key & cred_id
+	credential_to_share := GetPasswordInformation(user_data_share.Credential_id, []byte(user_data_share.Key)) // server.Credential -> password filename & filecontents decrypted
+
+	// AES key to encrypt the data
+	keycom := make([]byte, 32)
+	rand.Read(keycom)
+
+	// Obtain public key of client from private key
+	pkJson, err := json.Marshal(state.privKey.PublicKey)
+	chk(err)
+
+	// Prepare data
+	pkJson_c := utils.Encode64(utils.Encrypt(utils.Compress(pkJson), keycom))
+	keycom_c := utils.Encode64(utils.EncryptRSA(utils.Compress(keycom), state.srvPubKey))
 
 	// Prepare credentials_shared table data
 	shared_id := make([]byte, 32)
 	rand.Read(shared_id)
+	shared_id_c := utils.Encode64(utils.Encrypt(utils.Compress(shared_id), keycom))
 	shared_aes_key := make([]byte, 32)
 	rand.Read(shared_aes_key)
-	shared_aes_key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(shared_aes_key), user_to_share_public))
+	var public_key *rsa.PublicKey
+	errr := json.Unmarshal([]byte(user_to_share_public), &public_key)
+	if errr != nil {
+		fmt.Println("ERROR: ", errr)
+	}
+	shared_aes_key_c := utils.Encode64(utils.EncryptRSA(utils.Compress(shared_aes_key), public_key))
 	shared_by := state.user_id
+	shared_by_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(shared_by)), keycom))
 
 	// Prepare users_data table data
 	user_data_id := make([]byte, 32) // users_data_id
 	rand.Read(user_data_id)
-	user_data_site := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Site)), shared_aes_key)) // site
-	user_data_user_id := utils.Encode64(utils.HashSHA512([]byte(user_to_share))) // user_id
+	user_data_id_c := utils.Encode64(utils.Encrypt(utils.Compress(user_data_id), keycom))
+	user_data_site_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Site)), shared_aes_key)) // site
+	user_data_user_id := utils.HashSHA512([]byte(user_to_share)) // user_id
+	user_data_user_id_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_user_id)), keycom)) // user_id
+	user_data_shared_id_c := utils.Encode64(utils.Encrypt(utils.Compress(shared_id), shared_aes_key)) // shared_id
 	user_data_cred_id := make([]byte, 32) // cred_id
 	rand.Read(user_data_cred_id)
 	user_data_cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(user_data_cred_id), shared_aes_key)) // cred_id
-	user_data_alias := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Alias)), shared_aes_key)) // alias
-	user_data_username := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Username)), shared_aes_key)) // username
+	user_data_alias_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Alias)), shared_aes_key)) // alias
+	user_data_username_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_share.Username)), shared_aes_key)) // username
 	user_data_aes_key := make([]byte, 32) // aes_key
 	rand.Read(user_data_aes_key)
 	user_data_aes_key_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(user_data_aes_key)), shared_aes_key))
 
 	// Prepare credentials table data
-	cred_password := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Password)), user_data_aes_key)) // password
-	filename_password := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Filename)), user_data_aes_key)) // filename
-	filecontents_password := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Filecontents)), user_data_aes_key)) // filecontents
+	cred_id_c := utils.Encode64(utils.Encrypt(utils.Compress(user_data_cred_id), keycom)) // cred_id
+	cred_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Password)), user_data_aes_key)) // password
+	filename_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.Filename)), user_data_aes_key)) // filename
+	filecontents_password_c := utils.Encode64(utils.Encrypt(utils.Compress([]byte(credential_to_share.FileContents)), user_data_aes_key)) // filecontents
 
-	
+	// Digital signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte("shareCredential" + shared_id_c + shared_aes_key_c + shared_by_c + user_data_id_c + user_data_site_c + user_data_user_id_c + user_data_cred_id_c + user_data_alias_c + user_data_username_c + user_data_aes_key_c + cred_password_c + filename_password_c + filecontents_password_c + utils.GetTime()))
+	sign := utils.SignRSA(digest, state.privKey)
+	sign_c := utils.Encode64(utils.Encrypt(utils.Compress(sign), keycom))
+
+	data := url.Values{}
+	data.Set("cmd", "shareCredential")
+	data.Set("pubkey", pkJson_c)
+	data.Set("signature", sign_c)
+	data.Set("aeskeycom", keycom_c)
+	data.Set("shared_id", shared_id_c)
+	data.Set("shared_aes_key", shared_aes_key_c)
+	data.Set("shared_by", shared_by_c)
+	data.Set("user_data_id", user_data_id_c)
+	data.Set("user_data_site", user_data_site_c)
+	data.Set("user_data_user_id", user_data_user_id_c)
+	data.Set("user_data_cred_id", user_data_cred_id_c)
+	data.Set("user_data_alias", user_data_alias_c)
+	data.Set("user_data_username", user_data_username_c)
+	data.Set("user_data_aes_key", user_data_aes_key_c)
+	data.Set("user_data_shared_id", user_data_shared_id_c)
+	data.Set("cred_id", cred_id_c)
+	data.Set("cred_password", cred_password_c)
+	data.Set("filename_password", filename_password_c)
+	data.Set("filecontents_password", filecontents_password_c)
+
+	// POST request
+	r, err := state.client.PostForm("https://localhost:10443", data)
+	if err != nil {
+		fmt.Println("Error sharing the credential in the server")
+		return
+	}
+
+	// Obtain response from server
+	resp := server.Resp{}
+	json.NewDecoder(r.Body).Decode(&resp)
+	// Finish request
+	defer r.Body.Close()
+
+	if resp.Ok {
+		fmt.Println("Credential shared successfully")
+	} else {
+		fmt.Println("Error sharing the credential, try again")
+	}
 }
 
 // Reads a file and returns its content

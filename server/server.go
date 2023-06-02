@@ -46,6 +46,13 @@ type Credential struct {
 	Password      string
 	Key           string
 	Credential_id string
+	Shared 	  	  string
+}
+
+type CredentialShared struct {
+	Id string
+	AesKey string
+	SharedBy string
 }
 
 // Server's response
@@ -93,6 +100,76 @@ func Run() {
 	// localhost.key is the private key used to decrypt the data sent between client and server
 	// fourth argument is the server handler, if nil, the http.DefaultServeMux is used (it is a router that maps URLs to functions)
 	chk(http.ListenAndServeTLS(":10443", "localhost.crt", "localhost.key", nil))
+}
+
+func shareCredential(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key to decrypt user data
+	keycom := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aeskeycom")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), keycom))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), keycom))
+	_error := json.Unmarshal(pubkey, &public_key)
+	chk(_error)
+
+	// Verify signature
+	var digest []byte
+	digest = utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("shared_id") + req.Form.Get("shared_aes_key") + req.Form.Get("shared_by") + req.Form.Get("user_data_id") + req.Form.Get("user_data_site") + req.Form.Get("user_data_user_id") + req.Form.Get("user_data_cred_id") + req.Form.Get("user_data_alias") + req.Form.Get("user_data_username") + req.Form.Get("user_data_aes_key") + req.Form.Get("cred_password") + req.Form.Get("filename_password") + req.Form.Get("filecontents_password") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+	// Get shared data
+	shared_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("shared_id")), keycom))
+	shared_aes_key := utils.Decode64(req.Form.Get("shared_aes_key"))
+	shared_by := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("shared_by")), keycom))
+
+	// Get user data
+	user_data_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_data_id")), keycom))
+	user_data_site := utils.Decode64(req.Form.Get("user_data_site"))
+	user_data_cred_id := utils.Decode64(req.Form.Get("user_data_cred_id"))
+	user_data_alias := utils.Decode64(req.Form.Get("user_data_alias"))
+	user_data_username := utils.Decode64(req.Form.Get("user_data_username"))
+	user_data_user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_data_user_id")), keycom))
+	user_data_aes_key := utils.Decode64(req.Form.Get("user_data_aes_key"))
+	user_data_shared_id := utils.Decode64(req.Form.Get("user_data_shared_id"))
+
+	// Get credential data
+	cred_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("cred_id")), keycom))
+	cred_password := utils.Decode64(req.Form.Get("cred_password"))
+	filename_password := utils.Decode64(req.Form.Get("filename_password"))
+	filecontents_password := utils.Decode64(req.Form.Get("filecontents_password"))
+	
+	// Insert information
+	_, err := db.Query("INSERT INTO credentials_shared values (?,?,?)", shared_id, shared_aes_key, shared_by)
+	if err != nil {
+		fmt.Println(err)
+		response(w, false, "Error in the server", nil)
+		return
+	}
+
+	fmt.Println(user_data_username)
+	// Insert information
+	_, errr := db.Query("INSERT INTO users_data values (?,?,?,?,?,?,?,?)", user_data_id, user_data_site, user_data_username, user_data_aes_key, user_data_user_id, user_data_alias, user_data_cred_id, user_data_shared_id)
+	if errr != nil {
+		fmt.Println(errr)
+		response(w, false, "Error in the server", nil)
+		return
+	}
+
+	// Insert information
+	_, errrr := db.Query("INSERT INTO credentials values (?,?,?,?)", cred_id, cred_password, filename_password, filecontents_password)
+	if errrr != nil {
+		fmt.Println(errrr)
+		response(w, false, "Error in the server", nil)
+		return
+	}
+
+	// Response
+	response(w, true, "Credential shared successfully", nil)
 }
 
 func createCredential(w http.ResponseWriter, req *http.Request) {
@@ -152,7 +229,7 @@ func createCredential(w http.ResponseWriter, req *http.Request) {
 	// Insert information
 	_, errr := db.Query("INSERT INTO credentials values (?,?,?,?)", cred_id_pass_orig, utils.Decode64(c.Password), utils.Decode64(c.Filename), utils.Decode64(c.FileContents))
 	chk(errr)
-	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?,?)", utils.Decode64(cred_id), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias), cred_id_pass)
+	_, err := db.Query("INSERT INTO users_data values (?,?,?,?,?,?,?,?)", utils.Decode64(cred_id), utils.Decode64(c.Site), utils.Decode64(c.Username), utils.Decode64(c.Key), cred_user_id, utils.Decode64(c.Alias), cred_id_pass, nil)
 	chk(err)
 
 	// Response
@@ -182,19 +259,20 @@ func getAllCredentials(w http.ResponseWriter, req *http.Request) {
 	user_id := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("user_id")), aeskey))
 
 	// Get list of credentials
-	result, err := db.Query(`SELECT alias,site,username,aes_key,credential_id FROM users_data WHERE user_id=?`, user_id)
+	result, err := db.Query(`SELECT alias,site,username,aes_key,credential_id,shared_id FROM users_data WHERE user_id=?`, user_id)
 	chk(err)
 
 	var creds []Credential
 	c := Credential{}
-	var alias, site, username, key []byte
+	var alias, site, username, key, shared_id []byte
 	var credential_id string
 	for result.Next() {
-		result.Scan(&alias, &site, &username, &key, &credential_id)
+		result.Scan(&alias, &site, &username, &key, &credential_id, &shared_id)
 		c.Alias = utils.Encode64(alias)
 		c.Site = utils.Encode64(site)
 		c.Username = utils.Encode64(username)
 		c.Key = utils.Encode64(key)
+		c.Shared = utils.Encode64(shared_id)
 		//c.Password = utils.Encode64(password)
 		c.Credential_id = credential_id
 		//c.Filename = utils.Encode64(filename)
@@ -568,6 +646,48 @@ func remove2ndFactor(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func getCredShared(w http.ResponseWriter, req *http.Request) {
+	// Open db connection
+	db := utils.ConnectDB()
+	defer db.Close()
+
+	// Get AES Key
+	aeskey := utils.Decompress(utils.DecryptRSA(utils.Decode64(req.Form.Get("aes_key")), state.privKey))
+
+	// Get digital signature data
+	var public_key *rsa.PublicKey
+	signature := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("signature")), aeskey))
+	pubkey := utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aeskey))
+	err := json.Unmarshal(pubkey, &public_key)
+	chk(err)
+
+	// Verify signature
+	digest := utils.HashSHA512([]byte(req.Form.Get("cmd") + req.Form.Get("pubkey") + req.Form.Get("aes_key") + utils.GetTime()))
+	_ = utils.VerifyRSA(digest, signature, public_key)
+
+
+	// Get list of credentials
+	result, err := db.Query(`SELECT * FROM credentials_shared`)
+	chk(err)
+
+	var creds []CredentialShared
+	c := CredentialShared{}
+	var id, aes_key, shared_by []byte
+	for result.Next() {
+		result.Scan(&id, &aes_key, &shared_by)
+		c.Id = utils.Encode64(id)
+		c.AesKey = utils.Encode64(aes_key)
+		c.SharedBy = utils.Encode64(shared_by)
+		creds = append(creds, c)
+	}
+
+	// Response
+	data := map[string]interface{}{
+		"credentials_shared": creds,
+	}
+	response(w, true, "Credentials retrieved", data)
+}
+
 // Handle the requests
 func handler(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()                              // need to parse the form
@@ -611,7 +731,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		u.SessionToken = utils.Decrypt(utils.Decode64(req.Form.Get("session_token")), aesKey)       // session token
 		u.Seen = utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("last_seen")), aesKey)) // last time the user was seen
 		u.Data = make(map[string]interface{})                                                       // reserve space for additional data
-		u.Data["public"] = utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey)            // public key
+		u.Data["public"] = utils.Decompress(utils.Decrypt(utils.Decode64(req.Form.Get("pubkey")), aesKey))            // public key
 		u.Data["private"] = utils.Decode64(req.Form.Get("privkey"))                                 // private key, encrypted with keyData
 		second := req.Form.Get("second_factor")                                                     // second factor
 		var totpKey string
@@ -745,6 +865,10 @@ func handler(w http.ResponseWriter, req *http.Request) {
 			response(w, false, "User does not exist", nil)
 			return
 		}
+	case "shareCredential":
+		shareCredential(w, req)
+	case "getCredShared":
+		getCredShared(w, req)
 	case "remove2ndFactor":
 		remove2ndFactor(w, req)
 	case "checkUser":
